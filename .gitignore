@@ -1,0 +1,12 @@
+# بيانات المرضى: لا تُرفع أبداً
+doctor_*/
+doctor_*.zip
+triage/
+triage.zip
+*.dsdb
+
+# مخرجات مؤقتة
+__pycache__/
+.ipynb_checkpoints/
+outputs/
+app/test/shots/
