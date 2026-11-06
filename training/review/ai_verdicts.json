@@ -1,4 +1,4 @@
-{"reviewer": "claude", "note": "visual review of the 102 Colab drafts, 2026-11-06. Per tooth: ok | outline | number | unmarked | missing | hidden | broken. Not listed = drop (exclude) with reason.",
+{"reviewer": "ai", "note": "visual review of the 102 Colab drafts, 2026-11-06. Per tooth: ok | outline | number | unmarked | missing | hidden | broken. Not listed = drop (exclude) with reason.",
  "keep": {
   "001": {"13":"unmarked","12":"ok","11":"ok","21":"ok","22":"ok","23":"ok"},
   "003": {"13":"unmarked","12":"ok","11":"ok","21":"ok","22":"ok","23":"ok"},

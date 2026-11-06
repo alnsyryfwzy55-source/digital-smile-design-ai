@@ -1,6 +1,6 @@
 // Runs the smile pipeline (upper-teeth selection, absent/broken classification, design, morph) on REAL frontal tooth photos + REAL model output.
 const fs = require('fs'), C = require('../src/core.js'), S = require('../src/smile.js'), Sim = require('../src/sim.js');
-const D = '/tmp/claude-0/realteeth/', idx = JSON.parse(fs.readFileSync(D + 'index.json'));
+const D = process.env.REAL_TEETH_DIR || '/tmp/realteeth/', idx = JSON.parse(fs.readFileSync(D + 'index.json'));
 function npy(f) { const b = fs.readFileSync(f), hl = b.readUInt16LE(8), hdr = b.slice(10, 10 + hl).toString(); const sh = hdr.match(/\((.*?)\)/)[1].split(',').filter(Boolean).map(Number); const data = b.slice(10 + hl); const t = hdr.includes('<f4') ? new Float32Array(data.buffer.slice(data.byteOffset, data.byteOffset + data.length)) : new Uint8Array(data.buffer.slice(data.byteOffset, data.byteOffset + data.length)); return { sh, t }; }
 const stats = { n: 0, six: 0, orderOk: 0, broken: {}, missing: {}, unsure: {}, cut: 0, simMs: [] }, samples = [];
 for (const it of idx) {

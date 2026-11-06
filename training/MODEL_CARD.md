@@ -6,7 +6,7 @@ so the app and the server needed no code change. Trained on Colab (T4, 60 epochs
 ## Data
 - `smile_teeth_v2`: retractor photos, labelled by people.
 - 36 real smiles from openly licensed internet photos, drafted automatically and reviewed tooth by tooth by an AI
-  (Claude; verdicts in `training/review/claude_verdicts.json`). A visible canine the reviewer could not accept is an
+  (verdicts in `training/review/ai_verdicts.json`). A visible canine the reviewer could not accept is an
   IGNORE region (255), not background. Children, tangled braces and photos with a wrong incisor outline were dropped.
 - Augmentation `gap_augment`: a tooth erased into a dark gap or a healed ridge, labelled background (20% of samples).
 

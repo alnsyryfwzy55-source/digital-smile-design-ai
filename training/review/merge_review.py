@@ -1,6 +1,6 @@
 """Turn a reviewer's per-tooth verdicts into training-ready labels (annotation-tool export format).
 
-    python merge_review.py claude_verdicts.json mapping.json drafts_dir out.zip
+    python merge_review.py ai_verdicts.json mapping.json drafts_dir out.zip
 
 Only photos whose drawn outlines were all judged right are kept. A canine at the edge of the mouth that is visible but
 unmarked (or badly outlined) does not cost the photo: its polygon is dropped and the mouth region beyond the lateral

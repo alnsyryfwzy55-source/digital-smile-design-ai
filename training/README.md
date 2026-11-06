@@ -6,7 +6,7 @@
 |---|---|
 | `v3/train_v3.ipynb` | تدريب v3 على Colab: صور v2 مع ابتسامات حقيقية مراجَعة، وفراغات مصطنعة، ومناطق «تجاهل»، ومقارنة مع v2 |
 | `bootstrap/run_in_colab.ipynb` | مسودات تعليم من صور الإنترنت المرخّصة (Openverse)، بنقرة واحدة على Colab |
-| `review/` | المراجعة سناً سناً (`claude_verdicts.json`)، ودمجها في بيانات تدريب (`merge_review.py`) |
+| `review/` | المراجعة سناً سناً (`ai_verdicts.json`)، ودمجها في بيانات تدريب (`merge_review.py`) |
 | `accept_model.py` | بوابة قبول أي نموذج جديد: 10 بنود، وقرار واحد |
 | `calibrate_confidence.py` | معايرة حدّ الثقة الذي يُسأل تحته الطبيب |
 
