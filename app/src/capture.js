@@ -20,9 +20,25 @@ async function openCamera(root, c) {
   const shutter = h('button', { class: 'shutter', 'aria-label': 'التقاط يدوي', onclick: () => capture(true) }, ring);
   const flash = h('div', { class: 'flash' });
   const close = () => { stop(); go('#/case/' + c.id); };
+  // torch (flashlight): only shown when this camera supports it (most Android rear cameras)
+  let torchOn = false;
+  const torchBtn = h('button', { class: 'iconbtn hidden', 'aria-label': 'الكشاف', 'aria-pressed': 'false', title: 'الكشاف', onclick: () => setTorch(!torchOn) }, '🔦');
+  async function setTorch(on) {
+    const t = stream && stream.getVideoTracks()[0]; if (!t) return;
+    try { await t.applyConstraints({ advanced: [{ torch: on }] }); torchOn = on; }
+    catch (e) { torchOn = false; toast('تعذّر تشغيل الكشاف في هذه الكاميرا'); }
+    torchBtn.classList.toggle('on', torchOn); torchBtn.setAttribute('aria-pressed', String(torchOn));
+  }
+  function stats0Dark(bad) { return /ضعيفة/.test(bad.hint || ''); }
+  function updateTorch() {
+    const t = stream && stream.getVideoTracks()[0];
+    let can = false; try { can = !!(t && t.getCapabilities && t.getCapabilities().torch); } catch (e) { /* ignore */ }
+    torchBtn.classList.toggle('hidden', !can); torchOn = false; torchBtn.classList.remove('on'); torchBtn.setAttribute('aria-pressed', 'false');
+  }
   const el = h('div', { class: 'cam' }, video, svg,
     h('div', { class: 'top' }, h('button', { class: 'iconbtn', 'aria-label': 'إغلاق', onclick: close }, '✕'), h('div', { class: 'grow' }),
       h('button', { class: 'iconbtn', 'aria-label': 'من المعرض', onclick: () => { stop(); pickFromGallery(c.id); } }, '🖼'),
+      torchBtn,
       h('button', { class: 'iconbtn', 'aria-label': 'تبديل الكاميرا', onclick: () => { facing = facing === 'environment' ? 'user' : 'environment'; startStream(); } }, '🔄')),
     msg, h('div', { class: 'bottom' }, checks, shutter), flash);
   root.append(el);
@@ -36,6 +52,7 @@ async function openCamera(root, c) {
       msg.textContent = 'لا يمكن فتح الكاميرا: اسمح للتطبيق باستخدامها من إعدادات المتصفح، أو اختر صورة من المعرض.'; return;
     }
     video.srcObject = stream; await video.play().catch(() => {});
+    updateTorch();
     video.classList.toggle('mirror', facing === 'user'); svg.classList.toggle('mirror', facing === 'user');
   }
   function stop() { running = false; if (stream) stream.getTracks().forEach((t) => t.stop()); stream = null; }
@@ -111,7 +128,7 @@ async function openCamera(root, c) {
             goodSince = goodSince || now; const f = (now - goodSince) / HOLD_MS; setRing(f);
             msg.className = 'msg good'; msg.textContent = 'ممتاز، ثبّت…';
             if (f >= 1) { capture(false); return; }
-          } else { goodSince = 0; setRing(0); msg.className = 'msg'; msg.textContent = bad.hint || bad.label; }
+          } else { goodSince = 0; setRing(0); msg.className = 'msg'; msg.textContent = (bad.hint || bad.label) + (bad.id === 'light' && !torchOn && !torchBtn.classList.contains('hidden') && stats0Dark(bad) ? ' — أو شغّل الكشاف 🔦' : ''); }
         }
       } catch (e) { console.warn(e); }
     }
