@@ -32,7 +32,8 @@ function beforeAfter(beforeSrc, afterSrc, rect, opts = {}) {
   el.addEventListener('pointermove', (e) => { if (drag) at(e); });
   el.addEventListener('pointerup', () => { drag = false; }); el.addEventListener('pointercancel', () => { drag = false; });
   set(0.5);
-  return { el, setAfter(src) { draw(a, src); }, setBusy(v) { busy.classList.toggle('hidden', !v); } };
+  const note = h('div', { class: 'note hidden' }); el.append(note);
+  return { el, setAfter(src) { draw(a, src); }, setBusy(v) { busy.classList.toggle('hidden', !v); }, setNote(t) { note.textContent = t || ''; note.classList.toggle('hidden', !t); } };
 }
 
 async function viewResults(root, caseId) {
@@ -69,6 +70,14 @@ async function viewResults(root, caseId) {
         const my = ++simSeq; ba.setBusy(true);
         design = computeDesign(st, d);
         if (!design.ok) { ba.setBusy(false); return; }
+        // no "after" image while a tooth is unresolved: a simulation built on a wrong tooth map is worse than none
+        const iss = detectionIssues(st);
+        const blocked = iss.filter((i) => i.level === 'fail' && i.needsReview && (!i.implausible || !c.reviewed));
+        if (blocked.length) {
+          afterCanvas.getContext('2d').drawImage(st.full, 0, 0, afterCanvas.width, afterCanvas.height); ba.setAfter(afterCanvas); ba.setBusy(false);
+          ba.setNote(blocked.every((i) => i.implausible) ? 'تظهر المحاكاة بعد مراجعة حدود الأسنان (القياسات غير منطقية)' : 'تظهر المحاكاة بعد مراجعة الأسنان غير الواضحة (اضغط «مراجعة»)'); drawFindings(); drawIssues(); return;
+        }
+        ba.setNote(iss.some((i) => i.complex) ? 'حالة معقدة: محاكاة تقريبية للتوضيح فقط' : '');
         const r = await runSimulation(st, design, d);
         if (my !== simSeq) return;
         afterCanvas.getContext('2d').putImageData(r.full, 0, 0); ba.setAfter(afterCanvas); ba.setBusy(false);
@@ -116,15 +125,19 @@ async function viewResults(root, caseId) {
       h('a', { class: 'btn', href: '#/present/' + c.id, onclick: () => { Results.present = { st, afterCanvas, rects }; } }, 'عرض للمريض')));
     const openReview = () => reviewTeeth(st, c, async () => { await initSimulation(st); refresh(true); drawIssues(); });
     const approve = async () => {
-      const needs = detectionIssues(st).filter((i) => i.needsReview);
-      if (needs.length && !c.reviewed) { if (await confirmBox('راجع تحديد الأسنان أولاً', needs.map((n) => n.text).join(' '), 'مراجعة الآن')) openReview(); return; }
+      const iss = detectionIssues(st), needs = iss.filter((i) => i.needsReview);
+      const blocking = needs.filter((i) => i.level === 'fail' && !i.implausible);   // unresolved teeth / impossible order: never approvable
+      if (blocking.length || (needs.length && !c.reviewed)) { if (await confirmBox('راجع تحديد الأسنان أولاً', (blocking.length ? blocking : needs).map((n) => n.text).join(' '), 'مراجعة الآن')) openReview(); return; }
+      const odd = needs.filter((i) => i.implausible), complex = iss.some((i) => i.complex);
       const chk = h('input', { type: 'checkbox', id: 'approve-check' }), name = h('input', { type: 'text', id: 'approve-name', value: S.doctorName || '' });
-      const ok = await modal('اعتماد التصميم', h('div', null, h('label', { class: 'check' }, chk, h('span', null, 'راجعتُ التحليل والتصميم والمحاكاة، وأعتمدها قراراً سريرياً مني.')), h('label', { class: 'field' }, h('span', null, 'اسم الطبيب'), name)),
-        [{ label: 'إلغاء', value: false }, { label: 'اعتماد', value: () => chk.checked && name.value.trim() ? true : 'invalid', primary: true }]);
+      const chk2 = h('input', { type: 'checkbox', id: 'approve-odd' });
+      const warnBox = (odd.length || complex) ? h('div', { class: 'notice fail', style: { marginBottom: '10px' } }, h('div', null, odd.length ? odd[0].text : 'حالة معقدة: المحاكاة تقريبية.', h('label', { class: 'check', style: { marginTop: '8px' } }, chk2, h('span', null, 'أعلم أن القياسات أو المحاكاة غير موثوقة في هذه الحالة، وأن التصميم النهائي يدوي.')))) : null;
+      const ok = await modal('اعتماد التصميم', h('div', null, warnBox, h('label', { class: 'check' }, chk, h('span', null, 'راجعتُ التحليل والتصميم والمحاكاة، وأعتمدها قراراً سريرياً مني.')), h('label', { class: 'field' }, h('span', null, 'اسم الطبيب'), name)),
+        [{ label: 'إلغاء', value: false }, { label: 'اعتماد', value: () => chk.checked && name.value.trim() && (!warnBox || chk2.checked) ? true : 'invalid', primary: true }]);
       if (ok === 'invalid') { toast('أكّد المراجعة واكتب اسم الطبيب'); return; }
       if (!ok) return;
       S.doctorName = name.value.trim(); await saveSettings();
-      c.approval = { by: S.doctorName, at: Date.now() }; c.updated = Date.now(); await DB.put('cases', c);
+      c.approval = { by: S.doctorName, at: Date.now(), caveat: warnBox ? (odd.length ? odd[0].text : 'حالة معقدة: المحاكاة تقريبية.') : null }; c.updated = Date.now(); await DB.put('cases', c);
       await saveThumb(c, st, afterCanvas, rects.smile); drawAction(); toast('اعتُمد التصميم'); outputs(c, p, st, design, d, afterCanvas);
     };
     if (noTeeth(st)) {
@@ -198,12 +211,14 @@ function reviewTeeth(st, c, onDone) {
   });
   svg.addEventListener('pointerup', () => { drag = null; });
   const statusBox = h('div');
-  const drawStatus = () => statusBox.replaceChildren(h('div', { class: 'small muted', style: { margin: '10px 0 6px' } }, `السن ${sel}: ${C.TOOTH_NAME[sel]}`),
+  const drawStatus = () => statusBox.replaceChildren(h('div', { class: 'small muted', style: { margin: '10px 0 6px' } }, `السن ${sel}: ${C.TOOTH_NAME[sel]}`, status[sel] === 'unsure' ? h('b', { style: { color: 'var(--fail)' } }, ' — غير واضح: اختر حالته') : null),
     h('div', { class: 'chips' }, [['present', 'موجود'], ['broken', 'مكسور'], ['missing', 'مفقود'], ['hidden', 'غير ظاهر']].map(([k, l]) => h('button', { class: 'chip' + (status[sel] === k ? ' on' : ''), onclick: () => { status[sel] = k; drawStatus(); draw(); } }, l))),
-    h('div', { class: 'chips', style: { marginTop: '8px' } }, C.TEETH.map((t) => h('button', { class: 'chip' + (t === sel ? ' on' : ''), onclick: () => { sel = t; drawStatus(); draw(); } }, t))));
+    h('div', { class: 'chips', style: { marginTop: '8px' } }, C.TEETH.map((t) => h('button', { class: 'chip' + (t === sel ? ' on' : '') + (status[t] === 'unsure' ? ' need' : ''), onclick: () => { sel = t; drawStatus(); draw(); } }, status[t] === 'unsure' ? t + ' ؟' : t))));
   const bg = h('div', { class: 'modalbg' });
   const box = h('div', { class: 'modal' }, h('h2', null, 'مراجعة تحديد الأسنان'), h('p', { class: 'small muted' }, 'اضغط على السن، واسحب النقاط البيضاء لتصحيح حدوده: الجانبان عند نقاط التماس، والأعلى عند خط اللثة، والأسفل عند الحافة القاطعة.'),
     ed, statusBox, h('div', { class: 'row', style: { marginTop: '14px' } }, h('button', { class: 'btn', onclick: () => bg.remove() }, 'إلغاء'), h('button', { class: 'btn primary grow', onclick: async () => {
+      const left = C.TEETH.filter((t) => status[t] === 'unsure');
+      if (left.length) { sel = left[0]; drawStatus(); draw(); toast(`حدّد حالة السن ${left.join('، ')}: موجود أو مكسور أو مفقود أو غير ظاهر`); return; }
       const edited = c.toothMasksEdited || {};
       for (const t of C.TEETH) {
         const a = st.teeth[t], b = teeth[t], moved = Math.abs(a.x0 - b.x0) + Math.abs(a.x1 - b.x1) + Math.abs(a.y0 - b.y0) + Math.abs(a.y1 - b.y1) > 2;
@@ -271,6 +286,7 @@ async function labSheet(c, p, st, d, afterCanvas) {
   const html = `<div class="sheet" dir="rtl">
   <div class="hdr"><div><h1>${esc(S.clinicName)}</h1><div>ورقة المعمل — تصميم ابتسامة رقمي</div></div><div style="text-align:left">${fmtDate(Date.now())}<br>رقم الحالة ${esc(c.id.slice(0, 8))}</div></div>
   ${!c.approval ? '<div class="warn"><b>مسودة غير معتمدة</b> — لا تُنفّذ قبل اعتماد الطبيب.</div>' : ''}
+  ${c.approval && c.approval.caveat ? '<div class="warn"><b>تحذير:</b> ' + esc(c.approval.caveat) + ' — المحاكاة والمقاسات استرشادية فقط؛ التصميم النهائي على النموذج الدراسي.</div>' : ''}
   ${st.scaleSource !== 'caliper' ? '<div class="warn">المقاسات بالملم تقديرية من صورة الوجه (±10%). للتنفيذ اعتمد على القياس الفعلي أو النموذج الدراسي.</div>' : ''}
   <h2>المريض</h2><table><tr><th>الاسم</th><td>${esc(p?.name)}</td><th>رقم الملف</th><td>${esc(p?.fileNo || '—')}</td></tr></table>
   <h2>قبل / بعد</h2><img src="${smile.toDataURL('image/jpeg', 0.85)}" style="width:100%;border:1px solid #ccc"><img src="${face.toDataURL('image/jpeg', 0.8)}" style="width:100%;border:1px solid #ccc;margin-top:6px">

@@ -281,12 +281,30 @@
       else if (lib[t]) patch = lib[t]; else if (lib[MIRROR[t]]) { patch = lib[MIRROR[t]]; flip = true; }
       if (!patch || !patch.stats) continue;
       const b = tgt[t], st = patch.stats, bw = b.x1 - b.x0, bh = b.y1 - b.y0, Pi = patch.img;
+      // b. outline: the counterpart tooth's own shape (mirrored), not a template, so the new tooth has a natural contour
+      let pw = 0, ph = 0, PA = null, PB = null;
+      if (patch.mask) {
+        pw = Pi.w; ph = Pi.h;
+        const r1 = Math.max(1, Math.round(0.012 * pw)), r2 = Math.max(2, Math.round(0.06 * pw));
+        PA = blurAlpha(Float32Array.from(patch.mask), pw, ph, r1);          // soft edge
+        PB = blurAlpha(Float32Array.from(patch.mask), pw, ph, r2);          // wide falloff: the curved surface turns away at the sides
+      }
+      const poly = PA ? null : toothPolygon(o.shape || 'square', b, t === '13' || t === '23'), al = PA ? null : blurAlpha(Float32Array.from(rasterPoly(poly, w, h)), w, h, 1);
+      // alpha of the new tooth in image coordinates: the gap fill below is limited to it (plus the slot above its incisal
+      // two thirds), so the dark mouth under the new tooth and between the arches stays dark instead of a grey block
+      const destA = (x, y) => {
+        const u = clamp((x - b.x0) / bw, 0, 1), v = clamp((y - b.y0) / bh, 0, 1);
+        if (x < b.x0 - 1 || x > b.x1 + 1 || y < b.y0 - 1 || y > b.y1 + 1) return 0;
+        return PA ? sampleAlpha(PA, pw, ph, (flip ? 1 - u : u) * (pw - 1), v * (ph - 1)) : al[y * w + x];
+      };
       // a. the gap is filled from its surroundings (gum above, teeth beside) before the new tooth is painted, so no
       //    black corners stay around it. The gap is followed by its shape: the dark pixels connected to the dark pixels
       //    inside the new tooth's box (the estimated box of a missing tooth can be narrower than the real gap, and the
       //    design can make the new tooth narrower or shorter). Bounded to a window around the slot, so the dark mouth
       //    elsewhere is left alone; only dark pixels are touched, so the fragment of a broken tooth stays.
       const ti = TEETH.indexOf(t), xl = ti > 0 ? tgt[TEETH[ti - 1]].x1 : b.x0 - 0.3 * bw, xr = ti < 5 ? tgt[TEETH[ti + 1]].x0 : b.x1 + 0.3 * bw;
+      // below the new tooth's edge only where both neighbours reach lower (the slot between their crowns), never into the open mouth
+      const yLim = Math.max(b.y1, Math.min(ti > 0 ? tgt[TEETH[ti - 1]].y1 : b.y1, ti < 5 ? tgt[TEETH[ti + 1]].y1 : b.y1));
       const rx0 = Math.max(0, Math.floor(Math.min(b.x0, xl) - 0.3 * bw)), rx1 = Math.min(w - 1, Math.ceil(Math.max(b.x1, xr) + 0.3 * bw));
       const ry0 = Math.max(0, Math.floor(b.y0 - 0.35 * bh)), ry1 = Math.min(h - 1, Math.ceil(b.y1 + 0.2 * bh));
       {
@@ -305,7 +323,10 @@
           const j = q.pop(), x = j % rw, y = (j / rw) | 0;
           for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
             const X = x + dx, Y = y + dy; if (X < 0 || Y < 0 || X >= rw || Y >= rh) continue;
-            const n = Y * rw + X; if (dark[n] && !hole[n]) { hole[n] = 1; q.push(n); }
+            const n = Y * rw + X; if (!dark[n] || hole[n]) continue;
+            const GX = rx0 + X, GY = ry0 + Y;
+            if (GY > yLim && !(destA(GX, GY) > 0.02)) continue;     // never grow into the open mouth below the new tooth
+            hole[n] = 1; q.push(n);
           }
         }
         let nh = 0; for (let j = 0; j < rw * rh; j++) nh += hole[j];
@@ -314,15 +335,6 @@
           for (let y = 0; y < rh; y++) for (let x = 0; x < rw; x++) { const j = y * rw + x; if (!hole[j]) continue; const k = (ry0 + y) * w + rx0 + x; for (let c = 0; c < 3; c++) out.data[k * 4 + c] = f.data[j * 4 + c]; toothDst[k] = 0; }
         }
       }
-      // b. outline: the counterpart tooth's own shape (mirrored), not a template, so the new tooth has a natural contour
-      let pw = 0, ph = 0, PA = null, PB = null;
-      if (patch.mask) {
-        pw = Pi.w; ph = Pi.h;
-        const r1 = Math.max(1, Math.round(0.012 * pw)), r2 = Math.max(2, Math.round(0.06 * pw));
-        PA = blurAlpha(Float32Array.from(patch.mask), pw, ph, r1);          // soft edge
-        PB = blurAlpha(Float32Array.from(patch.mask), pw, ph, r2);          // wide falloff: the curved surface turns away at the sides
-      }
-      const poly = PA ? null : toothPolygon(o.shape || 'square', b, t === '13' || t === '23'), al = PA ? null : blurAlpha(Float32Array.from(rasterPoly(poly, w, h)), w, h, 1);
       for (let y = Math.max(0, Math.floor(b.y0) - 2); y <= Math.min(h - 1, Math.ceil(b.y1) + 2); y++) for (let x = Math.max(0, Math.floor(b.x0) - 2); x <= Math.min(w - 1, Math.ceil(b.x1) + 2); x++) {
         const k = y * w + x; if (!mouthMask[k]) continue;
         const u = clamp((x - b.x0) / bw, 0, 1), v = clamp((y - b.y0) / bh, 0, 1), su = (flip ? 1 - u : u) * (pw - 1), sv = v * (ph - 1);

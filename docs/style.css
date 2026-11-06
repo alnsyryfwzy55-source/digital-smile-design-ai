@@ -158,3 +158,5 @@ table.t th{color:var(--ink2);font-weight:600;font-size:13px}
 .sheet .hdr{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #0e7a6b;padding-bottom:6px}
 .sheet .warn{border:1px solid #a96400;background:#fff6e5;padding:6px 8px;margin-top:8px}
 .cam .top .iconbtn.on{background:rgba(255,214,10,.35);box-shadow:0 0 0 2px #ffd60a inset}
+.chip.need{border-color:var(--fail);color:var(--fail);font-weight:700}
+.ba .note{position:absolute;inset:auto 8px 8px 8px;background:rgba(0,0,0,.72);color:#fff;border-radius:10px;padding:8px 10px;font-size:13px;text-align:center;pointer-events:none}

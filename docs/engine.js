@@ -415,6 +415,22 @@ function findings(st, design) {
 
 const noTeeth = (st) => !st.edentulous && !C.TEETH.some((t) => st.status[t] === 'present' || st.status[t] === 'broken' || st.status[t] === 'missing');
 // Problems the doctor must look at before approving (detection, not design)
+// Plausibility of the visible (frontal) widths of the six teeth. Ratios do not depend on the mm scale; the mm range
+// of the central incisor allows the ±10% iris-scale error. A tooth wider than a central, or a central far outside the
+// human range, almost always means two teeth merged into one box or a shifted number (crowding, gaps, broken teeth).
+function implausibleTeeth(st) {
+  const ok = (t) => ['present', 'broken'].includes(st.status[t]) && st.teeth[t];
+  const w = (t) => st.teeth[t].x1 - st.teeth[t].x0, out = [];
+  const cen = ['11', '21'].filter(ok);
+  if (!cen.length) return out;
+  const cw = cen.reduce((a, t) => a + w(t), 0) / cen.length;
+  if (cen.length === 2 && Math.min(w('11'), w('21')) / Math.max(w('11'), w('21')) < 0.72) out.push({ t: '11/21', text: 'الثنيتان مختلفتان كثيراً في العرض' });
+  for (const t of ['12', '22']) if (ok(t) && w(t) / cw > 0.95) out.push({ t, text: `الرباعية ${t} بعرض الثنية أو أكبر` });
+  for (const t of ['13', '23']) if (ok(t) && w(t) / cw > 1.0) out.push({ t, text: `الناب ${t} أعرض من الثنية` });
+  if (st.mmppCrop) for (const t of cen) { const mm = w(t) * st.mmppCrop; if (mm < 6.0 || mm > 11.8) out.push({ t, text: `عرض الثنية ${t} ${mm.toFixed(1)} ملم (خارج المدى الطبيعي)` }); }
+  return out;
+}
+
 function detectionIssues(st) {
   const out = [];
   if (noTeeth(st)) return [{ level: 'fail', text: 'لا تظهر الأسنان العلوية في الصورة. صوّر المريض وهو يبتسم ابتسامة عريضة تُظهر أسنانه.', retake: true }];
@@ -433,6 +449,11 @@ function detectionIssues(st) {
   const lowConf = st.sel && st.sel.info ? C.TEETH.filter((t) => ['present', 'broken'].includes(st.status[t]) && st.sel.info[t] && st.sel.info[t].conf < CONFIRM_BELOW) : [];
   if (lowConf.length) out.push({ level: 'warn', text: `ثقة منخفضة في تحديد: ${lowConf.join('، ')} — تأكد من حدودها.`, needsReview: true });
   if (!lowConf.length && st.sel && st.sel.meanConf && st.sel.meanConf < 0.85) out.push({ level: 'warn', text: `ثقة الكشف منخفضة (${st.sel.meanConf.toFixed(2)}) — راجع التحديد.`, needsReview: true });
+  const odd = implausibleTeeth(st);
+  if (odd.length) out.push({ level: 'fail', text: `قياسات غير منطقية: ${odd.map((o) => o.text).join('، ')} — غالباً سنّان دُمجا أو حدود خاطئة. صحّح الحدود في المراجعة.`, needsReview: true, implausible: true });
+  const hard = C.TEETH.filter((t) => ['missing', 'broken', 'unsure', 'estimated'].includes(st.status[t]));
+  if (!st.edentulous && (hard.length >= 3 || (hard.length >= 2 && odd.length)))
+    out.push({ level: 'warn', text: 'حالة معقدة (فقد أو كسر أو تزاحم في عدة أسنان): المحاكاة التلقائية تقريبية ولا تمثل النتيجة النهائية. استخدمها للتوضيح فقط، والتصميم النهائي يدوي من الطبيب.', complex: true });
   if (!st.mmppCrop) out.push({ level: 'warn', text: 'تعذّر تقدير المقياس بالملم من العين.' });
   if (st.server && st.server.ok && st.server.disagree.length)
     out.push({ level: 'warn', text: `الخادم والجهاز اختلفا في: ${st.server.disagree.join('، ')} — حدّد حالة كل منها في المراجعة.`, needsReview: true });
