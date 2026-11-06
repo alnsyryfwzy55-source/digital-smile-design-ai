@@ -25,16 +25,32 @@ async function viewSettings(root) {
       h('button', { class: 'btn', onclick: setPin }, S.pin ? 'تغيير رمز الدخول' : 'تفعيل رمز الدخول'))));
 
   const diag = h('div', { class: 'small muted' }, 'جارٍ الفحص…');
-  (async () => {
+  const refreshDiag = async () => {
     let est = null, persisted = false; try { est = await navigator.storage?.estimate?.(); persisted = await navigator.storage?.persisted?.(); } catch (e) { /* ignore */ }
     const last = (await DB.all('cases')).filter((c) => c.analysis).sort((a, b) => b.updated - a.updated)[0];
-    diag.replaceChildren(h('div', null, `الإصدار ${APP_VERSION} · محرك النموذج: ${Engine.info.ep || 'لم يُحمَّل بعد'} · كاشف الوجه: ${Engine.info.face || 'لم يُحمَّل بعد'} · ملفات محلية: ${Engine.info.vendor ? 'نعم' : 'لا'}`),
+    diag.replaceChildren(...[h('div', null, `الإصدار ${APP_VERSION} · محرك النموذج: ${Engine.info.ep || 'لم يُحمَّل بعد'} · كاشف الوجه: ${Engine.info.face || 'لم يُحمَّل بعد'} · ملفات محلية: ${Engine.info.vendor ? 'نعم' : 'لا'}`),
       est ? h('div', null, `التخزين: ${(est.usage / 1048576).toFixed(0)} ميغابايت${persisted ? ' (دائم)' : ''}`) : null,
-      last?.analysis?.timings ? h('div', null, `آخر تحليل: ${Object.entries(last.analysis.timings).map(([k, v]) => k + ' ' + v + 'ms').join(' · ')}${last.analysis.segMs ? ' · النموذج ' + last.analysis.segMs + 'ms' : ''}`) : null);
-  })();
+      last?.analysis?.timings ? h('div', null, `آخر تحليل: ${Object.entries(last.analysis.timings).map(([k, v]) => k + ' ' + v + 'ms').join(' · ')}${last.analysis.segMs ? ' · النموذج ' + last.analysis.segMs + 'ms' : ''}`) : null].filter(Boolean));
+  };
+  refreshDiag();
+  const stMsg = h('div', { class: 'small', role: 'status', style: { marginTop: '8px' } });
+  const runCheck = async (btn) => {
+    btn.disabled = true; stMsg.className = 'small muted'; stMsg.textContent = 'جارٍ تحميل أدوات الذكاء الاصطناعي وفحصها على صورة معروفة…';
+    try {
+      const i = await Engine.prepare();
+      const st = i.selfTest;
+      if (st && !st.ok) throw new Error('نتيجة النموذج على صورة الفحص غير صحيحة');
+      stMsg.className = 'small'; stMsg.style.color = 'var(--ok)';
+      stMsg.textContent = `✓ النظام سليم — نموذج الأسنان يعمل (${i.ep})${st ? ' وأعطى النتيجة الصحيحة على صورة الفحص' : ''}، وكاشف الوجه جاهز.`;
+    } catch (e) {
+      stMsg.className = 'small'; stMsg.style.color = 'var(--fail)';
+      stMsg.textContent = '✗ فشل الفحص: ' + String(e.message || e) + ' — جرّب «إعادة تحميل الأدوات» ثم أعد الفحص.';
+    } finally { btn.disabled = false; refreshDiag(); }
+  };
+  const checkBtn = h('button', { class: 'btn primary', onclick: (ev) => runCheck(ev.currentTarget) }, 'فحص النظام');
   main.append(h('div', { class: 'card' }, h('h2', null, 'التشخيص'), diag,
-    h('div', { class: 'row', style: { marginTop: '10px' } }, h('button', { class: 'btn', onclick: exportDiagnostics }, 'تصدير تقرير تشخيص'),
-      h('button', { class: 'btn', onclick: async () => { if (!await confirmBox('إعادة تحميل', 'حذف أدوات الذكاء الاصطناعي المخزّنة وإعادة تحميلها؟')) return; try { await caches.delete('dsd-models-v2'); } catch (e) { /* ignore */ } location.reload(); } }, 'إعادة تحميل الأدوات'))));
+    h('div', { class: 'row', style: { marginTop: '10px' } }, checkBtn, h('button', { class: 'btn', onclick: exportDiagnostics }, 'تصدير تقرير تشخيص'),
+      h('button', { class: 'btn', onclick: async () => { if (!await confirmBox('إعادة تحميل', 'حذف أدوات الذكاء الاصطناعي المخزّنة وإعادة تحميلها؟')) return; try { await caches.delete('dsd-models-v2'); } catch (e) { /* ignore */ } location.reload(); } }, 'إعادة تحميل الأدوات')), stMsg));
 
   const tb = h('tbody');
   for (const r of S.rules) {
