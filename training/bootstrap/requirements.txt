@@ -1,0 +1,9 @@
+numpy
+opencv-python-headless
+pillow
+onnxruntime
+mediapipe
+requests
+torch
+torchvision
+transformers>=4.56

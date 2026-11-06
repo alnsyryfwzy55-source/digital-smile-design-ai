@@ -269,8 +269,8 @@
     const mm = (px) => scale ? px * scale : null;
     const M = r.metrics;
     M.ipl_angle = ipl;
-    if (has('commR', 'commL')) M.commissure_cant = normAngle(lineAngleDeg(P.commR, P.commL) - ipl);
-    if (has('cusp13', 'cusp23')) M.incisal_cant = normAngle(lineAngleDeg(P.cusp13, P.cusp23) - ipl);
+    if (has('commR', 'commL')) { M.commissure_cant = normAngle(lineAngleDeg(P.commR, P.commL) - ipl); M.commissure_span_px = Math.hypot(P.commL.x - P.commR.x, P.commL.y - P.commR.y); }
+    if (has('cusp13', 'cusp23')) { M.incisal_cant = normAngle(lineAngleDeg(P.cusp13, P.cusp23) - ipl); M.incisal_span_px = Math.hypot(P.cusp23.x - P.cusp13.x, P.cusp23.y - P.cusp13.y); }
     // facial midline: line glabella→menton (through subnasale if present: least squares x = a + b*y)
     const mids = ['glabella', 'subnasale', 'menton'].filter((k) => Q[k]).map((k) => Q[k]);
     if (mids.length >= 2 && Q.midlineDental) {
@@ -286,7 +286,10 @@
     }
     if (has('upperLip', 'zenith11')) { const d = Q.zenith11.y - Q.upperLip.y; M.gingival_display_px = -d; M.gingival_display = mm(-d); }
     // positive gingival_display = gum visible above zenith (lip above the zenith)
-    if (has('lastR', 'lastL', 'commR', 'commL')) M.buccal_corridor = Math.abs(Q.lastL.x - Q.lastR.x) / Math.abs(Q.commL.x - Q.commR.x);
+    if (has('lastR', 'lastL', 'commR', 'commL')) {
+      M.dentition_span_px = Math.abs(Q.lastL.x - Q.lastR.x); M.smile_width_px = Math.abs(Q.commL.x - Q.commR.x);
+      M.buccal_corridor = M.dentition_span_px / M.smile_width_px;
+    }
     if (has('incisal11', 'cusp13', 'cusp23', 'lowerLipMid', 'lowerLipR', 'lowerLipL')) {
       const inc = Q.incisal11.y - (Q.cusp13.y + Q.cusp23.y) / 2; // +: centrals lower than canines (convex)
       const lip = Q.lowerLipMid.y - (Q.lowerLipR.y + Q.lowerLipL.y) / 2;
@@ -295,7 +298,7 @@
       let cls;
       if (incN < -0.01) cls = 'reverse'; else if (incN < 0.015) cls = 'flat';
       else if (lipN > 0.005 && incN / lipN >= 0.5 && incN / lipN <= 2) cls = 'consonant'; else cls = 'nonparallel';
-      M.smile_arc = cls; M.smile_arc_inc = incN; M.smile_arc_lip = lipN;
+      M.smile_arc = cls; M.smile_arc_inc = incN; M.smile_arc_lip = lipN; M.smile_arc_ref_px = ref;
       M.incisal_to_lip = mm(Q.lowerLipMid.y - Q.incisal11.y);
     }
     if (has('glabella', 'subnasale', 'menton')) M.lower_third = (Q.menton.y - Q.subnasale.y) / (Q.subnasale.y - Q.glabella.y);
@@ -311,17 +314,32 @@
     const face = ctx.face?.metrics || {};
     const t = meas.teeth, mmpp = meas.mmPerPx;
     const fmt = (v, d = 2) => v == null || Number.isNaN(v) ? '—' : (+v).toFixed(d);
+    // Measurement precision. ctx.edgePx = uncertainty (one standard deviation) of one tooth edge in the same pixels
+    // as the boxes. A value outside the range by less than two standard deviations cannot be told apart from a
+    // normal one at this photo's resolution: status 'uncertain' instead of a false warning. No edgePx: unchanged.
+    const e = ctx.edgePx || 0, sz = Math.SQRT2 * e;
+    const avg = (a, b, k) => { const v = [a, b].map((x) => t[x] && (k === 'w' || !t[x].broken) ? t[x][k] : null).filter((x) => x != null); return v.length ? v.reduce((p2, q) => p2 + q, 0) / v.length : null; };
+    const sigRatio = (r, A, B) => (e && r != null && A && B) ? r * Math.hypot(sz / A, sz / B) : 0;
+    const SIZES = { cW: ['11', '21', 'w'], cH: ['11', '21', 'h'], lW: ['12', '22', 'w'], lH: ['12', '22', 'h'], kW: ['13', '23', 'w'], kH: ['13', '23', 'h'] };
+    const S2 = Object.fromEntries(Object.entries(SIZES).map(([k, [a, b, q]]) => [k, avg(a, b, q)]));
+    // face measurements are in photo pixels: ctx.faceEdgePx is the same edge uncertainty there; face scale = mm per photo pixel
+    const fe = ctx.faceEdgePx || 0, fsc = ctx.face?.scale || 0;
+    const sigMm = fe && fsc ? Math.SQRT2 * fe * fsc : 0;
+    const sigDeg = (span) => fe && span ? Math.SQRT2 * fe / span * 180 / Math.PI : 0;
+    const BAND = { pct: (v) => (v * 100).toFixed(1) + '%', deg: (v) => v.toFixed(1) + '°', mm: (v) => v.toFixed(1) + ' ملم' };
     for (let rule of rules) {
       if (!rule.enabled) continue;
       const out = { id: rule.id, group: rule.group, label: rule.label, value: null, target: '', status: 'na', msg: '' };
-      const range = (v, unit = '') => {
+      const range = (v, unit = '', sig = 0) => {
         out.value = v;
         if (v == null || Number.isNaN(v)) { out.status = 'na'; return; }
         const lo = rule.min ?? -Infinity, hi = rule.max ?? Infinity;
+        if (sig > 0) out.sigma = sig;
         out.target = rule.min != null && rule.max != null ? `${rule.min}–${rule.max}${unit}` : rule.max != null ? `≤ ${rule.max}${unit}` : `≥ ${rule.min}${unit}`;
         const span = (isFinite(hi) && isFinite(lo)) ? (hi - lo) : Math.abs(isFinite(hi) ? hi : lo) || 1;
         if (v >= lo && v <= hi) out.status = 'ok';
         else out.status = (v < lo - span * 0.5 || v > hi + span * 0.5) ? 'fail' : 'warn';
+        if (sig > 0 && out.status !== 'ok' && (v < lo ? lo - v : v - hi) < 2 * sig) out.status = 'uncertain';
       };
       const needCalib = rule.needs === 'calib' && !meas.calibrated;
       const needFace = rule.needs === 'face' && !ctx.face;
@@ -330,25 +348,30 @@
       if (needFace) { out.msg = 'يحتاج تحليل صورة الوجه'; res.push(out); continue; }
       switch (rule.id) {
         case 'central_wl': {
-          const v11 = t['11']?.wl, v21 = t['21']?.wl;
-          range(meas.ratios.central_wl);
+          const v11 = t['11']?.wl, v21 = t['21']?.wl, f = ctx.face ? face : null;
+          // the lip hides the gum line: only part of the crown is visible, so its length (and W/L) cannot be measured
+          if (f && (f.gingival_display != null ? f.gingival_display < -0.5 : f.gingival_display_px != null && f.gingival_display_px < -3)) {
+            out.msg = 'الشفة تغطي حد اللثة، فالطول الظاهر أقصر من طول السن الحقيقي ولا تُقاس النسبة من هذه الصورة'; break;
+          }
+          range(meas.ratios.central_wl, '', sigRatio(meas.ratios.central_wl, S2.cW, S2.cH));
           out.msg = `11: ${fmt(v11)} · 21: ${fmt(v21)}`; break;
         }
         case 'lat_central_w': {
           const tol = rule.tol ?? 0.06; rule = { ...rule, min: +(p - tol).toFixed(3), max: +(p + tol).toFixed(3) };
-          range(meas.ratios.lat_central_w); out.msg = `الهدف ${p}`; break;
+          range(meas.ratios.lat_central_w, '', sigRatio(meas.ratios.lat_central_w, S2.lW, S2.cW)); out.msg = `الهدف ${p}`; break;
         }
         case 'can_lat_w': {
           const tol = rule.tol ?? 0.08; rule = { ...rule, min: +(p - tol).toFixed(3), max: +(p + tol).toFixed(3) };
-          range(meas.ratios.can_lat_w); out.msg = `الهدف ${p}`; break;
+          range(meas.ratios.can_lat_w, '', sigRatio(meas.ratios.can_lat_w, S2.kW, S2.lW)); out.msg = `الهدف ${p}`; break;
         }
-        case 'lat_central_len': range(meas.ratios.lat_central_len); break;
-        case 'can_central_len': range(meas.ratios.can_central_len); break;
+        case 'lat_central_len': range(meas.ratios.lat_central_len, '', sigRatio(meas.ratios.lat_central_len, S2.lH, S2.cH)); break;
+        case 'can_central_len': range(meas.ratios.can_central_len, '', sigRatio(meas.ratios.can_central_len, S2.kH, S2.cH)); break;
         case 'sym_central': case 'sym_lateral': case 'sym_canine': {
           const s = meas.symmetry[{ sym_central: 'central', sym_lateral: 'lateral', sym_canine: 'canine' }[rule.id]];
           if (!s) break;
-          const v = Math.max(s.dw, s.dh);
-          range(v); out.target = `≤ ${(rule.max * 100).toFixed(0)}%`;
+          const v = Math.max(s.dw, s.dh), A = t[s.a], B = t[s.b];
+          const den = s.dw >= s.dh ? Math.max(A.w, B.w) : Math.max(A.h, B.h);
+          range(v, '', e && den ? Math.SQRT2 * sz / den : 0); out.target = `≤ ${(rule.max * 100).toFixed(0)}%`;
           out.msg = `فرق العرض ${(s.dw * 100).toFixed(1)}% · فرق الطول ${(s.dh * 100).toFixed(1)}%`;
           out.valueText = `${(v * 100).toFixed(1)}%`; break;
         }
@@ -373,16 +396,29 @@
           const z = avgDef(teeth[ids[0]]?.y0, teeth[ids[1]]?.y0);
           if (zc != null && z != null) { range((z - zc) * mmpp, ' ملم'); out.msg = 'موجب = أنزل (أقرب للحافة القاطعة)'; } break;
         }
-        case 'midline_dev': range(face.midline_dev, ' ملم'); if (face.midline_dir) out.msg = face.midline_dir; break;
-        case 'commissure_cant': if (face.commissure_cant != null) { range(Math.abs(face.commissure_cant), '°'); } break;
-        case 'incisal_cant': if (face.incisal_cant != null) { range(Math.abs(face.incisal_cant), '°'); } break;
-        case 'gingival_display': range(face.gingival_display, ' ملم'); out.msg = 'سالب = الشفة تغطي جزءاً من السن'; break;
-        case 'buccal_corridor': range(face.buccal_corridor); break;
-        case 'smile_arc': if (face.smile_arc) { out.status = face.smile_arc === 'consonant' ? 'ok' : face.smile_arc === 'reverse' ? 'fail' : 'warn'; out.valueText = SMILE_ARC_LABEL[face.smile_arc]; out.target = SMILE_ARC_LABEL.consonant; } break;
+        case 'midline_dev': range(face.midline_dev, ' ملم', sigMm); if (face.midline_dir) out.msg = face.midline_dir; break;
+        case 'commissure_cant': if (face.commissure_cant != null) { range(Math.abs(face.commissure_cant), '°', sigDeg(face.commissure_span_px)); } break;
+        case 'incisal_cant': if (face.incisal_cant != null) { range(Math.abs(face.incisal_cant), '°', sigDeg(face.incisal_span_px)); } break;
+        case 'gingival_display': range(face.gingival_display, ' ملم', sigMm); out.msg = 'سالب = الشفة تغطي جزءاً من السن'; break;
+        case 'buccal_corridor': range(face.buccal_corridor, '', fe && face.dentition_span_px && face.smile_width_px ? face.buccal_corridor * Math.hypot(Math.SQRT2 * fe / face.dentition_span_px, Math.SQRT2 * fe / face.smile_width_px) : 0); break;
+        case 'smile_arc': if (face.smile_arc) {
+          out.status = face.smile_arc === 'consonant' ? 'ok' : face.smile_arc === 'reverse' ? 'fail' : 'warn'; out.valueText = SMILE_ARC_LABEL[face.smile_arc]; out.target = SMILE_ARC_LABEL.consonant;
+          // a class decided by a hair: the measured curve is closer to a class boundary than twice its error
+          if (out.status !== 'ok' && fe && face.smile_arc_ref_px) {
+            const si = Math.sqrt(1.5) * fe / face.smile_arc_ref_px, inc = face.smile_arc_inc, lip = face.smile_arc_lip, near = (v, b, sg) => Math.abs(v - b) < 2 * sg;
+            let fragile = near(inc, -0.01, si) || near(inc, 0.015, si);
+            if (!fragile && inc >= 0.015) {
+              fragile = near(lip, 0.005, si);
+              if (!fragile && lip > 0.005) { const r = inc / lip, sr = r * Math.hypot(si / inc, si / lip); fragile = near(r, 0.5, sr) || near(r, 2, sr); }
+            }
+            if (fragile) { out.status = 'uncertain'; out.sigma = si; }
+          }
+        } break;
         case 'lower_third': range(face.lower_third); break;
         case 'rest_display': range(ctx.rest.display, ' ملم'); if (ctx.rest.approx) out.msg = 'المقياس تقريبي'; break;
       }
       if (out.valueText == null && out.value != null) out.valueText = fmt(out.value, rule.unit === 'deg' || rule.unit === 'mm' ? 1 : 2);
+      if (out.status === 'uncertain') out.msg = (out.msg ? out.msg + ' · ' : '') + (rule.unit === 'class' ? 'قريب من الحد بين تصنيفين ضمن هامش خطأ القياس — صورة أقرب تحسم' : `ضمن هامش خطأ القياس (±${(BAND[rule.unit] || ((v) => v.toFixed(2)))(2 * out.sigma)}) — صورة أقرب تحسم`);
       res.push(out);
     }
     return res;

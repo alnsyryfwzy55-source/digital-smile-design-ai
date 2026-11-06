@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>تعليم صور الأسنان</title>
+<style>
+:root{--bg:#f4f6f5;--panel:#fff;--ink:#1d2b28;--muted:#5f6f6b;--line:#d9e0de;--acc:#0e7a6b;--warn:#b5651d}
+@media (prefers-color-scheme:dark){:root{--bg:#121816;--panel:#1b2321;--ink:#e6eeec;--muted:#9aaba7;--line:#2c3734}}
+*{box-sizing:border-box}html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,"Segoe UI",Tahoma,sans-serif;display:flex;flex-direction:column}
+header{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--line)}
+header h1{font-size:16px;margin:0 0 0 12px}
+button,select,input{font:inherit;color:inherit}
+button{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer;min-height:36px}
+button.primary{background:var(--acc);border-color:var(--acc);color:#fff}
+button:disabled{opacity:.45;cursor:default}
+select.need{border:2px solid #e17055 !important;background:#fff3e6 !important} #status.warn{color:#d63031;font-weight:600}
+#status{color:var(--muted);font-size:13px;margin-inline-start:auto}
+main{flex:1;display:flex;min-height:0}
+#list{width:200px;overflow:auto;background:var(--panel);border-inline-start:1px solid var(--line)}
+#list div{padding:8px 10px;border-bottom:1px solid var(--line);cursor:pointer;font-size:13px;display:flex;justify-content:space-between;gap:6px}
+#list div.cur{background:color-mix(in srgb,var(--acc) 14%,transparent)}
+#list .tag{font-size:11px;color:var(--muted)}#list .ok{color:var(--acc)}#list .err{color:var(--warn)}
+#stage{flex:1;position:relative;min-width:0;display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:none}
+canvas#cv{max-width:100%;max-height:100%;cursor:crosshair}
+#side{width:250px;overflow:auto;background:var(--panel);border-inline-end:1px solid var(--line);padding:10px;display:flex;flex-direction:column;gap:8px}
+.tooth{display:flex;align-items:center;gap:6px;padding:4px;border-radius:8px;border:2px solid transparent}
+.tooth.sel{border-color:var(--acc)}
+.tooth b{width:34px;text-align:center;border-radius:6px;padding:2px 0;color:#000;cursor:pointer}
+.tooth select{flex:1;padding:4px;border-radius:6px;border:1px solid var(--line);background:var(--panel)}
+.hint{font-size:12px;color:var(--muted);line-height:1.6}
+.row{display:flex;gap:6px;flex-wrap:wrap}
+#empty{color:var(--muted);text-align:center;padding:24px;max-width:460px}
+</style>
+</head>
+<body>
+<header>
+  <h1>تعليم صور الأسنان</h1>
+  <label class="row"><button class="primary" id="open" type="button">فتح صور</button><input id="files" type="file" accept="image/*" multiple hidden></label>
+  <button id="openzip" type="button">فتح مسودات (ZIP)</button><input id="zipfile" type="file" accept=".zip,application/zip" hidden>
+  <input id="who" placeholder="اسم المراجِع" size="12" style="padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--panel)">
+  <button id="export" type="button" disabled>تصدير المراجَعة (ZIP)</button>
+  <span id="status">جارٍ تحميل النماذج…</span>
+</header>
+<main>
+  <aside id="side">
+    <div class="row"><button id="redraw" type="button">رسم السن من جديد</button><button id="del" type="button">حذف حدوده</button></div>
+    <div class="row"><button id="undo" type="button">تراجع</button><button id="zin" type="button">تكبير +</button><button id="zout" type="button">تصغير −</button></div>
+    <div id="teeth"></div>
+    <button class="primary" id="done" type="button">تمت المراجعة ← التالية</button>
+    <p class="hint">اسحب النقاط لتعديل الحدود. انقر مرتين على حافة لإضافة نقطة، وانقر بالزر الأيمن (أو اضغط مطوّلاً) على نقطة لحذفها.
+      «رسم من جديد»: انقر النقاط حول السن ثم انقر النقطة الأولى لإغلاقه.
+      حدّد فقط الأسنان العلوية الست: 13 12 11 21 22 23 (من يسار الصورة إلى يمينها).
+      اختصارات: 1–6 لاختيار السن، Enter للتالية، Ctrl+Z للتراجع.</p>
+    <p class="hint">الصور لا تغادر هذا الجهاز: كل المعالجة في المتصفح.</p>
+  </aside>
+  <div id="stage"><div id="empty">افتح صور الابتسامة (أو صور المباعد). يحدد النموذج الأسنان مبدئياً، وأنت تصحّح ثم تصدّر.</div><canvas id="cv" hidden></canvas></div>
+  <nav id="list"></nav>
+</main>
+<script src="../core.js"></script>
+<script src="../smile.js"></script>
+<script src="../vendor/ort.webgpu.min.js"></script>
+<script src="annotate.js"></script>
+</body>
+</html>

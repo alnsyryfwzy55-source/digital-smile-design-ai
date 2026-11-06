@@ -1,0 +1,9 @@
+numpy
+opencv-python-headless
+pillow
+onnxruntime
+mediapipe
+torch
+diffusers
+transformers
+accelerate

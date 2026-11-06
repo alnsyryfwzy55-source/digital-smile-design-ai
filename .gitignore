@@ -10,3 +10,9 @@ __pycache__/
 .ipynb_checkpoints/
 outputs/
 app/test/shots/
+research/generation/models/
+research/generation/results*/
+research/generation/photos/
+training/bootstrap/core/
+training/bootstrap/models/
+training/models_archive/

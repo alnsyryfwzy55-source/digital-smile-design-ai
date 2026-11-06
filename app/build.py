@@ -1,13 +1,17 @@
-import pathlib, shutil, subprocess
-R = pathlib.Path(__file__).parent; S = R/'src'; D = R.parent/'docs'; D.mkdir(exist_ok=True)
-t = (S/'index.template.html').read_text()
-app = '\n'.join((S/f).read_text() for f in ['app1.js','app2.js','app4.js','app3.js'])
-t = t.replace('/*CSS*/', (S/'style.css').read_text()).replace('/*CORE*/', (S/'core.js').read_text()).replace('/*APP*/', app)
-(D/'index.html').write_text(t)
-for f in ['sw.js','manifest.webmanifest','icon.svg']: shutil.copy(S/f, D/f)
-import cv2, numpy as np
-svg = (S/'icon.svg').read_text()
-# raster icons via headless chrome
-for n in (192, 512):
-    subprocess.run(['google-chrome','--headless=new','--no-sandbox','--disable-gpu',f'--window-size={n},{n}',f'--screenshot={D}/icon-{n}.png','--default-background-color=00000000',f'data:text/html,<style>html,body{{margin:0}}</style><img src="data:image/svg+xml;utf8,{svg.replace("#","%23").replace(chr(10),"")}" width="{n}" height="{n}">'],capture_output=True)
-print('built', (D/'index.html').stat().st_size)
+"""Builds the app into ../docs (served by GitHub Pages). The AI runtimes live in ../docs/vendor; put teeth_unet_v2.onnx in ../docs."""
+import pathlib, shutil, time
+R = pathlib.Path(__file__).parent; S = R / 'src'; D = R.parent / 'docs'
+D.mkdir(exist_ok=True)
+shutil.copy(S / 'index.template.html', D / 'index.html')
+for f in ['selftest.jpg', 'selftest.json', 'style.css', 'core.js', 'smile.js', 'sim.js', 'library.js', 'engine.js', 'app.js', 'capture.js', 'results.js', 'settings.js', 'worker.js', 'manifest.webmanifest', 'icon.svg']:
+    shutil.copy(S / f, D / f)
+if (D / 'annotate').exists(): shutil.rmtree(D / 'annotate')
+shutil.copytree(S / 'annotate', D / 'annotate')   # tooth annotation tool (docs/annotate/)
+(D / 'sw.js').write_text((S / 'sw.js').read_text().replace('__BUILD__', time.strftime('%Y%m%d%H%M%S')))
+# stamp the model's fingerprint into its URL (cache-busting: the offline cache keeps model files forever)
+import hashlib
+if (D / 'teeth_unet_v2.onnx').exists():
+    sha = hashlib.sha256((D / 'teeth_unet_v2.onnx').read_bytes()).hexdigest()[:12]
+    (D / 'engine.js').write_text((D / 'engine.js').read_text().replace('__MODEL_SHA__', sha))
+missing = [p for p in ['vendor/ort.webgpu.min.js', 'vendor/face_landmarker.task', 'vendor/mediapipe/vision_bundle.mjs', 'teeth_unet_v2.onnx'] if not (D / p).exists()]
+print('built ../docs' + (' | missing: ' + ', '.join(missing) if missing else ''))

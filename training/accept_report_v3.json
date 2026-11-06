@@ -1,0 +1,192 @@
+{
+ "accept": false,
+ "checks": [
+  {
+   "id": "A",
+   "ok": true,
+   "text": "نفس مدخل ومخرج النموذج الحالي"
+  },
+  {
+   "id": "B",
+   "ok": true,
+   "text": "دقة صور المباعد 0.955 (الحالي 0.956)"
+  },
+  {
+   "id": "C",
+   "ok": true,
+   "text": "دقة الابتسامات الحقيقية 0.927 (الحالي 0.888)"
+  },
+  {
+   "id": "D",
+   "ok": true,
+   "text": "رسم سن في الفراغ 0% (الحالي 80%)"
+  },
+  {
+   "id": "E",
+   "ok": true,
+   "text": "الضمانات البنيوية: 0 مخالفة"
+  },
+  {
+   "id": "F",
+   "ok": true,
+   "text": "أسنان حقيقية عُلّمت فراغاً: 0 (الحالي 0)"
+  },
+  {
+   "id": "G",
+   "ok": false,
+   "text": "حدّ الثقة 0.93: يلتقط 77% من الأخطاء ويسأل عن 0.4% من السليم"
+  },
+  {
+   "id": "H",
+   "ok": true,
+   "text": "الفحص الذاتي للتطبيق: [108038, 5138, 4497, 8908, 8695, 6714, 5466]"
+  },
+  {
+   "id": "I",
+   "ok": true,
+   "text": "الخدمة كاملة: تحليل كامل True، السن المفقود يُكتشف True"
+  },
+  {
+   "id": "J",
+   "ok": true,
+   "text": "الحجم 16.5 م.ب، السرعة 77.4 مللي ث/صورة (الحالي 81.2)"
+  }
+ ],
+ "new": {
+  "retractor_dice": 0.954672245565999,
+  "retractor_per_tooth": [
+   0.945,
+   0.958,
+   0.967,
+   0.971,
+   0.955,
+   0.933
+  ],
+  "smile_dice": 0.927449858803472,
+  "smile_per_tooth": [
+   0.888,
+   0.95,
+   0.97,
+   0.964,
+   0.953,
+   0.84
+  ],
+  "gap_hallucination": 0.0,
+  "gap_trials": 112,
+  "ms_per_image": 77.4,
+  "invariant_violations": 0,
+  "false_gap_alarms": 0,
+  "real_teeth_checked": 258,
+  "wrong_teeth": 47,
+  "confirm_catch": 0.7659574468085106,
+  "confirm_false_ask": 0.0038910505836575876,
+  "confirm_catch_app": 0.723404255319149,
+  "confirm_false_ask_app": 0.0038910505836575876,
+  "suggested_threshold": null,
+  "contract": true,
+  "io": {
+   "input": [
+    "image",
+    [
+     1,
+     3,
+     384,
+     384
+    ]
+   ],
+   "output": [
+    "logits",
+    [
+     1,
+     7,
+     384,
+     384
+    ]
+   ]
+  },
+  "selftest": [
+   108038,
+   5138,
+   4497,
+   8908,
+   8695,
+   6714,
+   5466
+  ],
+  "size_mb": 16.5,
+  "e2e": {
+   "full_analysis": true,
+   "missing_tooth_reported": true,
+   "total_ms": 126
+  }
+ },
+ "base": {
+  "retractor_dice": 0.9561870969166532,
+  "retractor_per_tooth": [
+   0.951,
+   0.966,
+   0.97,
+   0.972,
+   0.953,
+   0.924
+  ],
+  "smile_dice": 0.8883978147191934,
+  "smile_per_tooth": [
+   0.899,
+   0.921,
+   0.957,
+   0.941,
+   0.842,
+   0.77
+  ],
+  "gap_hallucination": 0.8035714285714286,
+  "gap_trials": 112,
+  "ms_per_image": 81.2,
+  "invariant_violations": 0,
+  "false_gap_alarms": 0,
+  "real_teeth_checked": 258,
+  "wrong_teeth": 43,
+  "confirm_catch": 0.9302325581395349,
+  "confirm_false_ask": 0.011673151750972763,
+  "confirm_catch_app": 0.9069767441860465,
+  "confirm_false_ask_app": 0.011673151750972763,
+  "suggested_threshold": 0.93,
+  "contract": true,
+  "io": {
+   "input": [
+    "image",
+    [
+     1,
+     3,
+     384,
+     384
+    ]
+   ],
+   "output": [
+    "logits",
+    [
+     1,
+     7,
+     384,
+     384
+    ]
+   ]
+  },
+  "selftest": [
+   107581,
+   5235,
+   4726,
+   8896,
+   8618,
+   6693,
+   5707
+  ],
+  "size_mb": 16.5,
+  "e2e": {
+   "full_analysis": true,
+   "missing_tooth_reported": true,
+   "total_ms": 140
+  }
+ },
+ "smiles": 13
+}
