@@ -52,7 +52,7 @@ const Engine = {
           const bmp = await createImageBitmap(b), c = canvasOf(bmp.width, bmp.height); c.getContext('2d').drawImage(bmp, 0, 0);
           selfTest = { input: modelInput(c).buffer, expect };
         } catch (e) { console.warn('self-test asset missing', e); }
-        const r = await this.call('init', { selfTest, ortUrl: ortBase + 'ort.webgpu.min.js', ortBase, modelUrl: new URL(MODEL_URL, location.href).href, size: MODEL_SIZE, webgpu: !/[?&]cpu\b/.test(location.search) });
+        const r = await this.call('init', { selfTest, ortUrl: ortBase + 'ort.webgpu.min.js', ortBase, modelUrl: new URL(MODEL_URL, location.href).href, size: MODEL_SIZE, webgpu: /[?&]gpu\b/.test(location.search) });   // CPU (WASM) by default: fast start on every phone; WebGPU shader compile can take tens of seconds
         this.info.ep = r.ep; this.info.warmMs = r.warmMs; this.info.fallback = r.fallback; this.info.selfTest = r.selfTest; onStatus({ key: 'model', state: 'done' });
       })();
       const face = (async () => {
