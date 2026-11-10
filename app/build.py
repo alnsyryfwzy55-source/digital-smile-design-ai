@@ -3,7 +3,7 @@ import pathlib, shutil, time
 R = pathlib.Path(__file__).parent; S = R / 'src'; D = R.parent / 'docs'
 D.mkdir(exist_ok=True)
 shutil.copy(S / 'index.template.html', D / 'index.html')
-for f in ['selftest.jpg', 'selftest.json', 'style.css', 'core.js', 'smile.js', 'sim.js', 'library.js', 'engine.js', 'app.js', 'capture.js', 'results.js', 'settings.js', 'worker.js', 'manifest.webmanifest', 'icon.svg']:
+for f in ['selftest.jpg', 'selftest.json', 'style.css', 'core.js', 'smile.js', 'sim.js', 'library.js', 'engine.js', 'app.js', 'capture.js', 'results.js', 'settings.js', 'worker.js', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png']:
     shutil.copy(S / f, D / f)
 if (D / 'annotate').exists(): shutil.rmtree(D / 'annotate')
 shutil.copytree(S / 'annotate', D / 'annotate')   # tooth annotation tool (docs/annotate/)
