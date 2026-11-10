@@ -16,3 +16,16 @@ research/generation/photos/
 training/bootstrap/core/
 training/bootstrap/models/
 training/models_archive/
+
+# Flutter (mobile/): generated in CI
+mobile/android/
+mobile/assets/web/
+mobile/build/
+mobile/.dart_tool/
+mobile/.flutter-plugins*
+mobile/test/
+mobile/analysis_options.yaml
+mobile/.metadata
+mobile/pubspec.lock
+mobile/*.iml
+mobile/.idea/
