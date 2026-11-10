@@ -118,6 +118,10 @@ def main(argv=None):
     a = ap.parse_args(argv)
     os.makedirs(a.out, exist_ok=True)
     t_start = time.time()
+    md = os.path.join(HERE, 'models'); os.makedirs(md, exist_ok=True)
+    for name, src in (('teeth_unet_v2.onnx', 'docs/teeth_unet_v2.onnx'), ('face_landmarker.task', 'docs/vendor/face_landmarker.task')):
+        if not os.path.exists(os.path.join(md, name)) and os.path.exists(os.path.join(REPO, src)):
+            __import__('shutil').copy(os.path.join(REPO, src), os.path.join(md, name))   # from the cloned repository
     ensure_models()
     face = G.FaceFinder(os.path.join(HERE, 'models', 'face_landmarker.task'))
     seg = G.Segmenter(os.path.join(HERE, 'models', 'teeth_unet_v2.onnx'))
