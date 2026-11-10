@@ -22,6 +22,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: '3.27.4'      # pinned: flutter_inappwebview 6 builds with this Android toolchain
           cache: true
       - name: Android project + bundled web app
         working-directory: mobile
@@ -29,6 +30,8 @@ jobs:
           flutter create --platforms=android --org com.alnusairi --project-name smile_design .
           bash tool/prepare.sh
           flutter pub get
+          # newer Android Gradle Plugins reject this old default in the WebView plugin; harmless on older ones
+          find "$HOME/.pub-cache" -path '*flutter_inappwebview*' -name 'build.gradle' -exec sed -i "s/proguard-android.txt/proguard-android-optimize.txt/" {} + || true
           dart run flutter_launcher_icons
       - name: Build APK
         working-directory: mobile
