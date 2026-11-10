@@ -244,4 +244,12 @@ def main(argv=None):
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    import traceback
+    out = sys.argv[sys.argv.index('--out') + 1] if '--out' in sys.argv else '.'
+    try:
+        sys.exit(main())
+    except Exception:                                      # the zip always says why a run stopped
+        os.makedirs(out, exist_ok=True)
+        open(os.path.join(out, 'ERROR.txt'), 'w').write(traceback.format_exc())
+        traceback.print_exc()
+        sys.exit(1)

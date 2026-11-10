@@ -13,7 +13,7 @@ cells = [
 **الصور:** نفس `photos.zip` من التجربة الأولى (صور من الإنترنت، لا صور مرضى)."""),
     code("""!nvidia-smi -L
 !rm -rf /content/repo && git clone -q --depth 1 https://github.com/alnsyryfwzy55-source/digital-smile-design-ai /content/repo
-!pip -q install diffusers transformers accelerate mediapipe onnxruntime opencv-python-headless
+!pip -q install mediapipe diffusers accelerate onnxruntime
 print('ready')"""),
     code("""import os, zipfile, glob
 from google.colab import files
@@ -24,7 +24,9 @@ if not glob.glob(PHOTO_DIR + '/**/*.*', recursive=True):
         zipfile.ZipFile(n).extractall(PHOTO_DIR)
 print(len(glob.glob(PHOTO_DIR + '/**/*.*', recursive=True)), 'files')"""),
     code("""%cd /content/repo/research/generation
-!python -u run_v2.py --photos /content/photos --out /content/results_v2 2>&1 | grep -v -e W0000 -e 'INFO:'"""),
+!mkdir -p /content/results_v2
+!python -u run_v2.py --photos /content/photos --out /content/results_v2 2>&1 | tee /content/results_v2/run_log.txt | grep -v -e W0000 -e 'INFO:'
+!tail -n 5 /content/results_v2/run_log.txt"""),
     code("""from IPython.display import Image, display
 import glob
 for p in sorted(glob.glob('/content/results_v2/case_*_sheet.jpg'))[:6]:
