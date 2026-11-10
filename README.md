@@ -6,6 +6,8 @@ aesthetic rules, proposes a design (including missing or broken teeth), shows th
 after**, and produces a lab file at true size. The doctor confirms anything the system is not sure of.
 
 - **App (installable PWA, phone/tablet):** `https://alnsyryfwzy55-source.github.io/digital-smile-design-ai/`
+- **Android app (works offline):** latest APK on the [Releases](https://github.com/alnsyryfwzy55-source/digital-smile-design-ai/releases) page
+  (`app-arm64-v8a-release.apk` for most phones), built automatically from `mobile/`
 - **Annotation tool:** `…/annotate/` · **Optional analysis server:** `server/` (free Hugging Face Space, `deploy/`)
 - Arabic version of this page: [README.ar.md](README.ar.md)
 
@@ -20,14 +22,24 @@ flowchart LR
   E --> F[Measurements in mm<br/>iris or caliper scale ± error]
   F --> G[Aesthetic rules<br/>precision-aware verdicts]
   G --> H[Design<br/>proportions · midline · smile arc · missing teeth]
-  H --> I[Before / after<br/>on the patient's face]
+  H --> I[Before / after<br/>on the patient's face<br/>own teeth + real-tooth library]
   H --> J[Lab file<br/>SVG 1:1 mm + JSON]
   E -. doubtful teeth .-> K[Doctor confirms]
   K --> H
 ```
 
-Everything runs in the browser (ONNX Runtime Web + MediaPipe). The optional server runs the same Python core as a second
-opinion: when phone and server disagree on a tooth, the doctor is asked.
+Everything runs on the device (ONNX Runtime Web on the CPU by default + MediaPipe), in the browser or in the Android
+app, with no internet needed after installation. The optional server runs the same Python core as a second opinion:
+when phone and server disagree on a tooth, the doctor is asked.
+
+**Design scope.** The doctor chooses what the design covers:
+- **Missing and broken teeth only** (default): the patient's own teeth stay as they are; each missing tooth fills the
+  real gap between its neighbours and is drawn from the patient's own counterpart tooth (mirrored) or, when there is
+  none, from a library of real teeth (8 sets from the labelled data, CC BY 4.0), matched to the neighbouring teeth's colour.
+- **Full smile**: the front teeth are reshaped from the patient's own photo (veneer-style) and whitened.
+
+The "after" image is never generated from scratch: every pixel is either the patient's own or a real tooth, inside the
+mouth only, so the face cannot change.
 
 ## Why the outputs can be trusted
 
@@ -42,7 +54,9 @@ Reliability is built in layers, each tested, instead of trusting one network:
 | Measurement precision | every verdict knows its error (photo resolution and model grid): a difference smaller than the error is "cannot be judged from this photo", not a false warning | app and Python agree on 300/300 random cases |
 | Confidence threshold | a tooth below 0.95 confidence must be confirmed by the doctor | calibrated: catches 43/47 wrong teeth, asks about 3/257 correct ones |
 | Model acceptance gate | a new model replaces the current one only if it is at least as good on 10 measures | rejects blurred, gap-painting, over-confident and wrong-interface models |
-| Doctor in the loop | nothing is approved before doctor review; disagreements and doubtful teeth block approval | end-to-end browser tests |
+| Plausibility checks | impossible widths (a lateral or canine as wide as a central, unequal centrals, a central outside 6–11.8 mm) are sent back for review | catches the merged-teeth failures seen on crowded and multi-gap cases |
+| No image over doubt | while any tooth is unclear, or widths are implausible and not yet reviewed, no "after" image is shown; complex cases are labelled approximate and need an explicit sign-off, printed on the lab sheet | end-to-end browser tests |
+| Doctor in the loop | nothing is approved before doctor review; review cannot close and approval is blocked while any tooth is unresolved | end-to-end browser tests |
 
 **Why no general AI (LLM) in the loop:** a vision LLM was tested as a reviewer of tooth labels. It marked visible teeth as
 hidden, approved shifted numbering and misjudged children vs adults. Adding it would add silent errors, so the system
@@ -61,20 +75,37 @@ Tooth model (7 classes, input 384×384, 16.5 MB ONNX). Same photos, same measure
 | Inference, CPU | 81 ms | **77 ms** |
 
 Simulation (the "after" image), measured on 129 rebuilt-tooth cases against the real tooth (`app/test/sim_bench/`):
-no black remnants (1.9% → 0.0%), seams inside teeth 3× lower, edges as soft as real teeth, whitening never burns detail
-beyond what the photo itself has, no blue cast in highlights.
+black remnants 0.1% (was 1.9%), SSIM 0.73, edges as soft as real teeth (edge ratio 1.04), halo below the visible
+threshold (ΔE 1.7), whitening never burns detail beyond what the photo itself has, no blue cast in highlights.
+
+### Generative AI for the "after" image (research)
+
+Tested on free Colab GPUs on 14 openly licensed smiles with missing, broken and stained teeth (`research/generation/`).
+The automatic check measures both geometry (teeth where the design puts them, nothing changed outside the mouth) and
+realism (enamel texture vs the patient's own teeth, colour vs the planned shade, seams):
+
+| Rendering | passes both checks |
+|---|---|
+| v1: flat painted teeth + Stable Diffusion 1.5 | 0% (geometry 86%, but every result looked plastic) |
+| v2: real-tooth library, no diffusion | 43% |
+| v2 + Stable Diffusion 1.5 (strength 0.3–0.45) | **64%** |
+| v2 + SDXL inpainting | 36% |
+
+Conclusion: almost all of the gain comes from drawing real teeth, which needs no GPU, so that is what the app does.
+A diffusion pass is a possible later option on a server, pending a blind realism rating by the dentist.
 
 ## Repository
 
 ```
 docs/        the app as served (GitHub Pages): HTML/JS, AI runtimes in docs/vendor, model teeth_unet_v2.onnx (= v3)
 app/         app sources, build script (app/build.py) and tests (unit, browser end-to-end, simulation benchmark)
+mobile/      Android app (Flutter): docs/ bundled and served on the phone; APK built by .github/workflows/android.yml
 core/dsd/    the Python core: measurements with error, rules, design, validation, lab export, numbering, checks
 server/      analysis service + HTTP API (standard library) + FastAPI wrapper, with tests
 deploy/      free deployment on Hugging Face Spaces (Dockerfile, model fingerprint check)
 training/    v3 training notebook, internet-draft pipeline, review tools, acceptance gate, calibration, model card
 data/        the labelled training set smile_teeth_v2 (CC BY 4.0) and its sources
-research/    generative "after" image experiments (not used in the app; future work)
+research/    generative "after" image experiments (v1, v2 notebooks; real-tooth bank; not used in the app)
 ```
 
 ## Run it
@@ -95,7 +126,13 @@ cd server && python http_api.py --port 8800                        # POST /api/a
 
 # a new model: accept or reject
 python training/accept_model.py new_model.onnx --smiles reviewed.zip
+
+# Android app (CI does this on every push to docs/ or mobile/)
+cd mobile && flutter create --platforms=android --org com.alnusairi --project-name smile_design . \
+  && bash tool/prepare.sh && flutter pub get && dart run flutter_launcher_icons && flutter build apk --release --split-per-abi
 ```
+
+In the app, **Settings → System check** loads the models and verifies them on a known image.
 
 Training (`training/v3/train_v3.ipynb`) and the internet-draft pipeline (`training/bootstrap/run_in_colab.ipynb`) run
 on free Google Colab GPUs; both notebooks are self-contained.
@@ -114,4 +151,6 @@ on free Google Colab GPUs; both notebooks are self-contained.
 - The real-smile test labels were reviewed by an AI, not yet by a clinician; a clinician-reviewed test set and caliper
   measurements on clinic patients are the next validation step.
 - The canine at the end of the arch is the weakest tooth (Dice ≈ 0.86–0.89 on smiles).
+- Six upper front teeth only; lower and back teeth, braces, severe crowding and mixed (child) dentition are out of scope.
 - Generative (photorealistic) "after" images are research only (`research/generation`).
+- The Android APK is signed with the default debug key (fine for direct installation); publishing on Google Play needs a release key.
