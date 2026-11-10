@@ -295,10 +295,19 @@ def prepare_inputs(crop, design, cur_masks, mouth_poly, shade='B1', dilate=5, ba
         xa, xb = int(max(0, b['x0'] - 4)), int(min(w, b['x1'] + 4))
         gum_line[xa:xb] = np.minimum(gum_line[xa:xb], b['y0'] + (0.5 if bank_set is not None else 0.22) * (b['y1'] - b['y0']))
     dark = (hole == 1) & (yy > gum_line[None, :])
-    pre[dark] = (45, 28, 28)
+    if bank_set is not None:                                # the patient's own mouth-interior colour, not a fixed one
+        g = cv2.cvtColor(crop, cv2.COLOR_RGB2GRAY)
+        inner = (mouth > 0) & (old == 0) & (g < np.percentile(g[mouth > 0], 25))
+        pre[dark] = np.median(crop[inner], 0) if inner.sum() > 50 else (45, 28, 28)
+    else:
+        pre[dark] = (45, 28, 28)
     detail = crop.astype(np.float32) - cv2.GaussianBlur(crop, (0, 0), 3).astype(np.float32)
     if bank_set is not None:
         TB.paint_teeth(pre, design, bank_set, target_lab)
+        # a 3-px ring around the new teeth (inside the mask) is blended from both sides instead of a hard dark rim
+        ring = (cv2.dilate(design_m, np.ones((7, 7), np.uint8)) > 0) & (design_m == 0) & (mask > 0)
+        p8 = np.clip(pre, 0, 255).astype(np.uint8)
+        pre = cv2.inpaint(p8, ring.astype(np.uint8), 3, cv2.INPAINT_TELEA).astype(np.float32)
     for t, m in ({} if bank_set is not None else tooth_ms).items():
         b = design[t]
         ys, xs = np.nonzero(m & mask)
@@ -329,7 +338,7 @@ def prepare_inputs(crop, design, cur_masks, mouth_poly, shade='B1', dilate=5, ba
     if bank_set is None:
         pre[contact & (mask == 1)] *= 0.62
     else:                                                   # real teeth bring their own contacts; just a soft shadow
-        pre[contact & (mask == 1) & (design_m == 0)] *= 0.55
+        pre[contact & (mask == 1) & (design_m == 0)] *= 0.8
     return dict(prepaint=np.clip(pre, 0, 255).astype(np.uint8), mask=mask, edges=edges, target_lab=target_lab, ref_mask=ref_mask,
                 design_mask=design_m & mouth, tooth_masks={t: m & mouth for t, m in tooth_ms.items()})
 

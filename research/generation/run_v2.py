@@ -77,8 +77,8 @@ class Renderer:
             # all on the GPU (about 10 GB of the T4's 15): CPU offload needs more system RAM than free Colab has
             # (the previous run was killed silently while loading SDXL that way)
             p = p.to(self.device)
-            if self.device == 'cuda':
-                p.enable_vae_slicing()
+            if self.device == 'cuda' and hasattr(p, 'vae') and hasattr(p.vae, 'enable_slicing'):
+                p.vae.enable_slicing()
         p.scheduler = UniPCMultistepScheduler.from_config(p.scheduler.config)
         p.set_progress_bar_config(disable=True)
         self.key, self.pipe = key, p
