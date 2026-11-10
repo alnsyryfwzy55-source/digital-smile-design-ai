@@ -74,10 +74,11 @@ class Renderer:
             from diffusers import StableDiffusionXLControlNetInpaintPipeline as P, AutoencoderKL
             vae = AutoencoderKL.from_pretrained(m['vae'], torch_dtype=self.dtype)
             p = get(P, m['base'], controlnet=cn, vae=vae)
+            # all on the GPU (about 10 GB of the T4's 15): CPU offload needs more system RAM than free Colab has
+            # (the previous run was killed silently while loading SDXL that way)
+            p = p.to(self.device)
             if self.device == 'cuda':
-                p.enable_model_cpu_offload()                       # fits the 15 GB of a free T4
-            else:
-                p = p.to(self.device)
+                p.enable_vae_slicing()
         p.scheduler = UniPCMultistepScheduler.from_config(p.scheduler.config)
         p.set_progress_bar_config(disable=True)
         self.key, self.pipe = key, p

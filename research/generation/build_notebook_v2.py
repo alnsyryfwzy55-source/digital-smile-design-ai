@@ -26,12 +26,14 @@ if not glob.glob(PHOTO_DIR + '/**/*.*', recursive=True):
         zipfile.ZipFile(n).extractall(PHOTO_DIR)
 print(len(glob.glob(PHOTO_DIR + '/**/*.*', recursive=True)), 'files')"""),
     code("""%cd /content/repo/research/generation
+# two separate runs: if SDXL fails, the SD 1.5 results are already saved
 !mkdir -p /content/results_v2
-!python -u run_v2.py --photos /content/photos --out /content/results_v2 2>&1 | tee /content/results_v2/run_log.txt | grep -v -e W0000 -e 'INFO:'
-!tail -n 5 /content/results_v2/run_log.txt"""),
+!python -u run_v2.py --photos /content/photos --out /content/results_v2/sd15 --models sd15 2>&1 | tee /content/results_v2/sd15_log.txt | grep -e sweep -e case_ -e pass_rate -e Error -e Killed
+!python -u run_v2.py --photos /content/photos --out /content/results_v2/sdxl --models sdxl 2>&1 | tee /content/results_v2/sdxl_log.txt | grep -e sweep -e case_ -e pass_rate -e Error -e Killed
+!ls /content/results_v2/sd15 /content/results_v2/sdxl | head -5"""),
     code("""from IPython.display import Image, display
 import glob
-for p in sorted(glob.glob('/content/results_v2/case_*_sheet.jpg'))[:6]:
+for p in sorted(glob.glob('/content/results_v2/*/case_*_sheet.jpg'))[:6]:
     print(p.split('/')[-1], '— قبل | التصميم | أسنان حقيقية بلا توليد | بعد التوليد'); display(Image(p, width=1100))"""),
     code("""!cd /content && rm -f results_v2.zip && zip -qr results_v2.zip results_v2
 from google.colab import files
