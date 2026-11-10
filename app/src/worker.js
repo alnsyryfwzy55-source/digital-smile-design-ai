@@ -98,6 +98,10 @@ async function segmentOnce(m) {
 }
 
 function buildLibrary(items) {
+  if (Array.isArray(items)) return items.map(buildSet);      // several real-tooth sets
+  return buildSet(items);
+}
+function buildSet(items) {
   const lib = {};
   for (const [t, it] of Object.entries(items || {})) {
     const img = { w: it.w, h: it.h, data: new Uint8ClampedArray(it.data) }, mask = new Uint8Array(it.w * it.h), hole = new Uint8Array(it.w * it.h);
@@ -111,7 +115,7 @@ function buildLibrary(items) {
 function simulate(m) {
   const t0 = performance.now(), s = simState;
   const r = Sim.simulate({ crop: s.crop, mouthMask: s.mouth, toothMasks: s.toothMasks, current: s.current, status: m.status || s.status,
-    target: m.target, treat: m.treat, shape: m.shape, shadeHex: m.shadeHex, whiten: m.whiten, library });
+    target: m.target, treat: m.treat, shape: m.shape, shadeHex: m.shadeHex, whiten: m.whiten, library, scope: m.scope });
   const full = { w: s.full.w, h: s.full.h, data: new Uint8ClampedArray(s.full.data) };
   Sim.pasteBack(full, r.img, r.alpha, s.Minv, s.M);
   return { full: full.data.buffer, cropImg: r.img.data.buffer, ms: Math.round(performance.now() - t0) };

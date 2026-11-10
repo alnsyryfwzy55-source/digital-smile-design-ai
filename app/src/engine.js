@@ -93,13 +93,18 @@ const Engine = {
 
   async sendLibrary() {
     const L = window.DSDLibrary; if (!L) return;
-    const items = {}, transfer = [];
-    for (const [t, url] of Object.entries(L.teeth)) {
-      const bmp = await createImageBitmap(await (await fetch(url)).blob());
-      const c = canvasOf(bmp.width, bmp.height), x = c.getContext('2d'); x.drawImage(bmp, 0, 0);
-      const d = x.getImageData(0, 0, c.width, c.height);
-      items[t] = { w: c.width, h: c.height, data: d.data.buffer }; transfer.push(d.data.buffer);
-    }
+    const transfer = [];
+    const load = async (teeth) => {
+      const items = {};
+      for (const [t, url] of Object.entries(teeth)) {
+        const bmp = await createImageBitmap(await (await fetch(url)).blob());
+        const c = canvasOf(bmp.width, bmp.height), x = c.getContext('2d'); x.drawImage(bmp, 0, 0);
+        const d = x.getImageData(0, 0, c.width, c.height);
+        items[t] = { w: c.width, h: c.height, data: d.data.buffer }; transfer.push(d.data.buffer);
+      }
+      return items;
+    };
+    const items = L.sets ? await Promise.all(L.sets.map((s) => load(s.teeth))) : await load(L.teeth);
     await this.call('library', { items }, transfer);
   },
 
@@ -364,8 +369,15 @@ function computeDesign(st, d) {
   const lower = (x) => SM.chainY(lips.lower, x);
   let target = SM.applySmileArc(prop.target, lower, st.mmppCrop, { lengthDeltaMm: d.lengthMm });
   target = SM.limitChanges(teeth, target, st.mmppCrop, { shortenMm: 1.5 + Math.max(0, -d.lengthMm), lengthenMm: 2.5 + Math.max(0, d.lengthMm) }, status);
+  // scope: 'missing' (default) = only missing / broken teeth are treated, the patient's own teeth stay as they are;
+  // 'full' = full smile design (veneers on the present teeth). The doctor can still change each tooth.
+  const scope = d.scope === 'full' ? 'full' : 'missing';
   const treat = {};
-  for (const t of C.TEETH) treat[t] = d.treat?.[t] || (status[t] === 'missing' ? 'implant' : status[t] === 'broken' ? 'crown' : status[t] === 'hidden' ? 'none' : 'veneer');
+  for (const t of C.TEETH) treat[t] = d.treat?.[t] || (status[t] === 'missing' ? 'implant' : status[t] === 'broken' ? 'crown' : status[t] === 'hidden' ? 'none' : scope === 'full' ? 'veneer' : 'none');
+  // untreated teeth keep their place and size; missing teeth between them fill the real gap (proportions from the design)
+  target = { ...target };
+  for (const t of C.TEETH) if (treat[t] === 'none' && status[t] === 'present') target[t] = { ...teeth[t] };
+  if (scope !== 'full') target = fitGaps(target, status, treat);
   const mStatus = {}; for (const t of C.TEETH) mStatus[t] = treat[t] === 'none' && status[t] !== 'present' ? 'missing' : 'present';
   const measAfter = C.measure(target, st.mmppCrop, mStatus);
   const pP = C.PROPORTIONS[d.proportion]?.p ?? 0.7;
@@ -382,6 +394,26 @@ function computeDesign(st, d) {
   return { ok: true, target, treat, prop, measAfter, rulesNow, rulesAfter, changes, facialX, mm: !!st.mmppCrop };
 }
 
+// Runs of missing teeth between untreated neighbours: share the real gap in the designed proportions.
+function fitGaps(target, status, treat) {
+  const T = C.TEETH, out = { ...target };
+  for (let i = 0; i < 6; i++) {
+    if (status[T[i]] !== 'missing' || treat[T[i]] === 'none') continue;
+    let j = i; while (j + 1 < 6 && status[T[j + 1]] === 'missing' && treat[T[j + 1]] !== 'none') j++;
+    const run = T.slice(i, j + 1), fixedL = i > 0 && treat[T[i - 1]] === 'none', fixedR = j < 5 && treat[T[j + 1]] === 'none';
+    if (fixedL || fixedR) {
+      const L = fixedL ? out[T[i - 1]].x1 : out[run[0]].x0, R = fixedR ? out[T[j + 1]].x0 : out[run[run.length - 1]].x1;
+      const dw = run.map((t) => out[t].x1 - out[t].x0), sum = dw.reduce((a, b) => a + b, 0);
+      if (R - L > 0.3 * sum) {
+        let x = L;
+        run.forEach((t, k) => { const wk = dw[k] * (R - L) / sum; out[t] = { ...out[t], x0: x, x1: x + wk }; x += wk; });
+      }
+    }
+    i = j;
+  }
+  return out;
+}
+
 async function initSimulation(st) {
   const masks = {}, transfer = [];
   for (const [t, m] of Object.entries(st.toothMasks)) { const b = m.slice().buffer; masks[t] = b; transfer.push(b); }
@@ -391,7 +423,7 @@ async function initSimulation(st) {
     mouth, toothMasks: masks, current: st.teeth, status: st.status, M: st.geom.crop.M, Minv: st.geom.crop.Minv }, transfer);
 }
 async function runSimulation(st, design, d) {
-  const r = await Engine.call('simulate', { target: design.target, treat: design.treat, status: st.status, shape: d.shape, shadeHex: C.SHADES[d.shade] || C.SHADES.B1, whiten: 1 });
+  const r = await Engine.call('simulate', { target: design.target, treat: design.treat, status: st.status, shape: d.shape, shadeHex: C.SHADES[d.shade] || C.SHADES.B1, whiten: 1, scope: d.scope === 'full' ? 'full' : 'missing' });
   return { full: new ImageData(new Uint8ClampedArray(r.full), st.fullImg.width, st.fullImg.height), crop: new ImageData(new Uint8ClampedArray(r.cropImg), st.cropImg.width, st.cropImg.height), ms: r.ms };
 }
 

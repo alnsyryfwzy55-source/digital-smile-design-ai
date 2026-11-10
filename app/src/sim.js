@@ -80,8 +80,14 @@
       const L = levels[l], U = levels[l + 1];
       for (let y = 0; y < L.h; y++) for (let x = 0; x < L.w; x++) {
         const k = y * L.w + x; if (L.Wt[k] >= 1) continue;
-        const q = Math.min(U.h - 1, y >> 1) * U.w + Math.min(U.w - 1, x >> 1), a = L.Wt[k];
-        for (let c = 0; c < 3; c++) L.C[k * 3 + c] = L.C[k * 3 + c] * a + U.C[q * 3 + c] * (1 - a);
+        // bilinear from the coarser level (nearest-neighbour here showed as square blocks in larger fills)
+        const fx = Math.min(U.w - 1, Math.max(0, (x + 0.5) / 2 - 0.5)), fy = Math.min(U.h - 1, Math.max(0, (y + 0.5) / 2 - 0.5));
+        const x0 = Math.floor(fx), y0 = Math.floor(fy), x1 = Math.min(U.w - 1, x0 + 1), y1 = Math.min(U.h - 1, y0 + 1), tx = fx - x0, ty = fy - y0, a = L.Wt[k];
+        const q00 = (y0 * U.w + x0) * 3, q10 = (y0 * U.w + x1) * 3, q01 = (y1 * U.w + x0) * 3, q11 = (y1 * U.w + x1) * 3;
+        for (let c = 0; c < 3; c++) {
+          const v = (U.C[q00 + c] * (1 - tx) + U.C[q10 + c] * tx) * (1 - ty) + (U.C[q01 + c] * (1 - tx) + U.C[q11 + c] * tx) * ty;
+          L.C[k * 3 + c] = L.C[k * 3 + c] * a + v * (1 - a);
+        }
         L.Wt[k] = 1;
       }
     }
@@ -201,7 +207,8 @@
     Morph the patient's own photo: every tooth is stretched/narrowed/lengthened to its designed box (texture, highlights,
     gum and lower teeth are kept), gaps close, then a texture-preserving whitening. Only missing/broken teeth are painted
     (from the counterpart tooth or the library).
-    opts: { crop, mouthMask, toothMasks:{t:Uint8}, current:{t:box} (all six), target:{t:box}, treat, status, shape, shadeHex, whiten, library }
+    opts: { crop, mouthMask, toothMasks:{t:Uint8}, current:{t:box} (all six), target:{t:box}, treat, status, shape, shadeHex, whiten,
+            library ([{t: patch}] real-tooth sets, or one set), scope ('missing' default | 'full') }
     returns { img, alpha }
   */
   function simulate(o) {
@@ -252,9 +259,12 @@
     };
     // ---- 3. warp the mouth interior; warp the tooth masks the same way
     const out = copyImg(crop), px = [0, 0, 0];
-    const oldTeeth = new Uint8Array(w * h);
-    for (const t of TEETH) { const m = o.toothMasks[t]; if (m && treat(t) && o.status[t] !== 'missing') for (let k = 0; k < w * h; k++) if (m[k]) oldTeeth[k] = 1; }
-    const toothDst = new Uint8Array(w * h);
+    const oldTeeth = new Uint8Array(w * h), ownTeeth = new Uint8Array(w * h);
+    for (const t of TEETH) {
+      const m = o.toothMasks[t]; if (!m || o.status[t] === 'missing') continue;
+      for (let k = 0; k < w * h; k++) if (m[k]) { if (treat(t)) oldTeeth[k] = 1; if ((o.status[t] || 'present') === 'present') ownTeeth[k] = 1; }
+    }
+    const toothDst = new Uint8Array(w * h), ownDst = new Uint8Array(w * h);
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
       const k = y * w + x; if (!mouthMask[k]) continue;
       const sx = invX(x), sy = invY(x, y);
@@ -262,10 +272,13 @@
       out.data[k * 4] = px[0]; out.data[k * 4 + 1] = px[1]; out.data[k * 4 + 2] = px[2];
       const mi = clamp(Math.round(sy), 0, h - 1) * w + clamp(Math.round(sx), 0, w - 1);
       if (oldTeeth[mi]) toothDst[k] = 1;
+      if (ownTeeth[mi]) ownDst[k] = 1;
     }
     // ---- 4. reference enamel colour (after warping) and target colour
-    const ref = labStats(out, erode(toothDst, w, h, 2));
-    const lib = o.library || {};
+    // the patient's own enamel: every present tooth, treated or not (a new tooth must match the teeth it sits between)
+    const ref = labStats(out, erode(ownDst, w, h, 2)) || labStats(out, erode(toothDst, w, h, 2));
+    const full = o.scope === 'full';
+    const lib = chooseSet(o.library, tgt);
     const libRef = Object.values(lib).find((l) => l && l.stats)?.stats;
     const base = ref || libRef || { mean: [72, 2, 16], std: [7, 2, 4] };
     const shade = hexLab(o.shadeHex || '#F0E9D8'), s = clamp(o.whiten ?? 1, 0, 1);
@@ -275,6 +288,9 @@
     const painted = new Uint8Array(w * h);
     const usable = (k) => o.status[k] === 'present' && o.toothMasks[k] && cur[k];
     for (const t of ['13', '23', '12', '22', '11', '21']) {
+      // only missing / broken teeth are painted (present teeth are reshaped from their own pixels above, which keeps
+      // them the patient's teeth even in a full smile design): from the counterpart tooth when there is one, else from
+      // the real-tooth set that best fits the design
       if (!treat(t) || (o.status[t] !== 'missing' && o.status[t] !== 'broken' && o.status[t] !== 'unsure')) continue;
       let patch = null, flip = false;
       if (usable(MIRROR[t])) { patch = toothPatch(crop, o.toothMasks[MIRROR[t]], cur[MIRROR[t]]); flip = true; }
@@ -340,7 +356,8 @@
         const u = clamp((x - b.x0) / bw, 0, 1), v = clamp((y - b.y0) / bh, 0, 1), su = (flip ? 1 - u : u) * (pw - 1), sv = v * (ph - 1);
         let a, shade = 0;
         if (PA) {
-          a = Math.min(1, sampleAlpha(PA, pw, ph, su, sv) * 1.25);
+          const pa = sampleAlpha(PA, pw, ph, su, sv);
+          a = clamp((pa - 0.3) / 0.45, 0, 1); a = a * a * (3 - 2 * a);     // crisp edge: the filled patch border never shows as faint blocks
           shade = 6 * clamp(1 - sampleAlpha(PB, pw, ph, su, sv) * 1.6, 0, 1);    // up to 6 L* darker towards the outline
         } else a = Math.min(1, al[k] * 1.15);
         if (a <= 0.01) continue;
@@ -381,6 +398,10 @@
         if (lab[0] >= refL - 2.2 * refStd && Math.hypot(lab[1], lab[2]) <= refC + 14 && lab[1] < 14) wm[k] = 1;   // enamel, not gum (gum is red: high a*)
       }
     }
+    // whitening only for cosmetic work (a present tooth treated, or the full smile): a replaced tooth alone matches its
+    // neighbours as they are, so it does not stand out whiter than the patient's own teeth
+    const cosmetic = full || TEETH.some((t) => treat(t) && (o.status[t] || 'present') === 'present');
+    if (!cosmetic) wm.fill(0);
     const alpha = blurAlpha(Float32Array.from(wm), w, h, 2);
     const dL = clamp(tL - refL, 0, 16);                      // natural whitening: at most ~16 L* units
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
@@ -402,6 +423,25 @@
     return { img: out, alpha: ma };
   }
 
+  // Real-tooth sets (one labelled photo each): the set whose width proportions and width/length ratios are closest to
+  // the design. A single set (older library format {t: patch}) is used as it is.
+  function chooseSet(library, tgt) {
+    if (!library) return {};
+    if (!Array.isArray(library)) return library;
+    const W = (b) => b.x1 - b.x0, wc = (W(tgt['11']) + W(tgt['21'])) / 2;
+    let best = library[0] || {}, bestCost = Infinity;
+    for (const set of library) {
+      const pc = ((set['11']?.img.w || 1) + (set['21']?.img.w || 1)) / 2;
+      let cost = 0;
+      for (const t of TEETH) {
+        const p = set[t], b = tgt[t]; if (!p || !b) { cost += 9; continue; }
+        cost += Math.abs(Math.log((W(b) / wc) / (p.img.w / pc))) + 0.5 * Math.abs(Math.log((W(b) / Math.max(1, b.y1 - b.y0)) / (p.img.w / p.img.h)));
+      }
+      if (cost < bestCost) { best = set; bestCost = cost; }
+    }
+    return best;
+  }
+
   // typical colour of the dark mouth interior: the darkest fifth of the mouth pixels that are not teeth
   function darkColour(img, mouth, teeth) {
     const px = [];
@@ -413,6 +453,6 @@
     return s.map((v) => v / n);
   }
 
-  const api = { TEETH, makeImg, copyImg, sample, warpAffine, pasteBack, blurAlpha, inpaint, rgb2lab, lab2rgb, hexLab, labStats, erode, dilate, toothPolygon, rasterPoly, toothPatch, simulate };
+  const api = { TEETH, chooseSet, makeImg, copyImg, sample, warpAffine, pasteBack, blurAlpha, inpaint, rgb2lab, lab2rgb, hexLab, labStats, erode, dilate, toothPolygon, rasterPoly, toothPatch, simulate };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.DSDSim = api;
 })(typeof window !== 'undefined' ? window : globalThis);

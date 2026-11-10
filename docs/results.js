@@ -77,7 +77,8 @@ async function viewResults(root, caseId) {
           afterCanvas.getContext('2d').drawImage(st.full, 0, 0, afterCanvas.width, afterCanvas.height); ba.setAfter(afterCanvas); ba.setBusy(false);
           ba.setNote(blocked.every((i) => i.implausible) ? 'تظهر المحاكاة بعد مراجعة حدود الأسنان (القياسات غير منطقية)' : 'تظهر المحاكاة بعد مراجعة الأسنان غير الواضحة (اضغط «مراجعة»)'); drawFindings(); drawIssues(); return;
         }
-        ba.setNote(iss.some((i) => i.complex) ? 'حالة معقدة: محاكاة تقريبية للتوضيح فقط' : '');
+        const nothing = C.TEETH.every((t) => design.treat[t] === 'none');
+        ba.setNote(nothing ? 'لا يوجد سن مفقود أو مكسور: اختر «الابتسامة كاملة» في التصميم لتصميم تجميلي' : iss.some((i) => i.complex) ? 'حالة معقدة: محاكاة تقريبية للتوضيح فقط' : '');
         const r = await runSimulation(st, design, d);
         if (my !== simSeq) return;
         afterCanvas.getContext('2d').putImageData(r.full, 0, 0); ba.setAfter(afterCanvas); ba.setBusy(false);
@@ -105,6 +106,9 @@ async function viewResults(root, caseId) {
     const drawControls = () => {
       const out = h('output', null, (d.lengthMm > 0 ? '+' : '') + d.lengthMm.toFixed(1) + ' ملم');
       controls.replaceChildren(h('h2', null, 'التصميم'),
+        h('div', { class: 'small muted' }, 'نطاق التصميم'),
+        chipRow([['missing', 'المفقود والمكسور فقط'], ['full', 'الابتسامة كاملة']], d.scope === 'full' ? 'full' : 'missing', (v) => { d.treat = undefined; change('scope', v); }),
+        h('div', { class: 'small muted', style: { marginBottom: '12px' } }, d.scope === 'full' ? 'كل الأسنان الأمامية تُعاد تشكيلاً وتبييضاً (فينير/تيجان).' : 'تبقى أسنان المريض كما هي، ويُرسم المفقود والمكسور بلون الأسنان المجاورة.'),
         h('div', { class: 'small muted' }, 'الشكل'), chipRow(Object.entries(SHAPE_LABEL), d.shape, (v) => change('shape', v)),
         h('div', { class: 'small muted', style: { marginTop: '12px' } }, 'اللون'), chipRow(SHADE_OPTIONS.map((s) => [s.id, s.label]), d.shade, (v) => change('shade', v)),
         h('div', { class: 'row', style: { marginTop: '12px' } }, h('div', { class: 'grow' }, h('div', { class: 'small muted' }, 'طول الأسنان'),
@@ -294,7 +298,7 @@ async function labSheet(c, p, st, d, afterCanvas) {
   <table><tr><th>السن</th><th>الحالة</th><th>العلاج</th><th>الحالي ع × ط</th><th>المقترح ع × ط</th><th>التغيير في الطول</th></tr>
   ${C.TEETH.map((t) => { const a = st.teeth[t], ch = design.changes[t], k = st.mmppCrop || 1; return `<tr><td><b>${t}</b> ${C.TOOTH_NAME[t]}</td><td>${STATUS_LABEL[st.status[t]] || ''}</td><td>${TREAT_LABEL[design.treat[t]]}</td><td>${st.status[t] === 'present' ? f1((a.x1 - a.x0) * k) + ' × ' + f1((a.y1 - a.y0) * k) : '—'}</td><td>${design.treat[t] === 'none' ? '—' : f1(ch.w) + ' × ' + f1(ch.h)}</td><td>${design.treat[t] === 'none' || st.status[t] !== 'present' ? '—' : (ch.dIncisal >= 0 ? '+' : '') + f1(ch.dIncisal)}</td></tr>`; }).join('')}
   </table>
-  <table style="margin-top:6px"><tr><th>الشكل</th><td>${SHAPE_LABEL[d.shape]}</td><th>اللون</th><td>${esc(d.shade)}</td><th>المادة</th><td>${esc(c.material || '')}</td></tr>
+  <table style="margin-top:6px"><tr><th>النطاق</th><td>${d.scope === 'full' ? 'الابتسامة كاملة' : 'المفقود والمكسور فقط'}</td><th>الشكل</th><td>${SHAPE_LABEL[d.shape]}</td><th>اللون</th><td>${esc(d.shade)}</td><th>المادة</th><td>${esc(c.material || '')}</td></tr>
   <tr><th>التناسب</th><td>${num(design.prop.p, 2)}</td><th>ع/ط الثنية</th><td>${num(design.measAfter.ratios.central_wl, 2)}</td><th>خط الوسط</th><td>${d.midline === 'facial' ? 'منتصف الوجه' : 'الحالي'}</td></tr></table>
   <h2>التحليل</h2><table>${fnd.map((x) => `<tr><td>${esc(x.title)}</td><td>${esc(x.text)}</td></tr>`).join('')}</table>
   ${c.labNotes ? `<h2>ملاحظات</h2><div style="white-space:pre-wrap">${esc(c.labNotes)}</div>` : ''}
