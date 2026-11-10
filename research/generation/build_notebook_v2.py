@@ -11,9 +11,11 @@ cells = [
 **التشغيل:** Runtime ← Change runtime type ← **T4 GPU**، ثم شغّل الخلايا بالترتيب. المدة نحو 45–60 دقيقة (ينزّل نحو 12 GB من النماذج أول مرة).
 
 **الصور:** نفس `photos.zip` من التجربة الأولى (صور من الإنترنت، لا صور مرضى)."""),
-    code("""!nvidia-smi -L
+    code("""%cd /content
+!nvidia-smi -L
 !rm -rf /content/repo && git clone -q --depth 1 https://github.com/alnsyryfwzy55-source/digital-smile-design-ai /content/repo
 !pip -q install mediapipe diffusers accelerate onnxruntime
+import os; assert os.path.exists('/content/repo/research/generation/run_v2.py'), 'clone failed: run this cell again'
 print('ready')"""),
     code("""import os, zipfile, glob
 from google.colab import files
