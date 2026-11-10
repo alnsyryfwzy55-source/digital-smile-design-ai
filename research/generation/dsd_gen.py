@@ -240,22 +240,40 @@ def hex_rgb(h):
     return np.array([int(h[i:i + 2], 16) for i in (0, 2, 4)], np.float32)
 
 
-def prepare_inputs(crop, design, cur_masks, mouth_poly, shade='B1', dilate=5):
-    """Prepaint (design teeth painted flat with simple shading), inpaint mask, and edge map.
+def prepare_inputs(crop, design, cur_masks, mouth_poly, shade='B1', dilate=5, bank_set=None):
+    """Prepaint, inpaint mask, and edge map.
 
+    v1 (bank_set=None): design teeth painted flat with simple shading inside the design polygons.
+    v2 (bank_set from tooth_bank): real teeth of one labelled photo, each in its design box with its own
+    outline and texture, recoloured to the patient's own shade with moderate whitening.
     The mask covers the old upper teeth and the new design, inside the lip opening and above
     the incisal line, so the lips, gums outside the mask and the lower teeth stay original."""
     h, w = crop.shape[:2]
     mouth = poly_mask(mouth_poly, w, h)
-    design_m = np.zeros((h, w), np.uint8)
-    tooth_ms = {}
-    for t, b in design.items():
-        m = poly_mask(tooth_polygon(t, b), w, h)
-        tooth_ms[t] = m
-        design_m |= m
     old = np.zeros((h, w), np.uint8)
     for m in cur_masks.values():
         old |= m
+    design_m = np.zeros((h, w), np.uint8)
+    tooth_ms = {}
+    target_lab = None
+    ref_mask = old & mouth
+    if bank_set is not None:
+        import tooth_bank as TB
+        tooth_ms = TB.paint_teeth(np.zeros((h, w, 3), np.float32), design, bank_set, bank_set['lab'])   # shapes only
+        ref = old & mouth
+        if ref.sum() < 200:                                    # no upper teeth left: use the lower teeth of the opening
+            low = np.zeros((h, w), np.uint8)
+            ys = [b['y1'] for b in design.values()]
+            low[int(max(ys)) + 4:, :] = 1
+            g = cv2.cvtColor(crop, cv2.COLOR_RGB2LAB)[..., 0]
+            ref = (low & mouth & (g > np.percentile(g[mouth > 0], 70))).astype(np.uint8)
+        target_lab = TB.target_shade(crop, ref)
+        ref_mask = ref
+    else:
+        for t, b in design.items():
+            tooth_ms[t] = poly_mask(tooth_polygon(t, b), w, h)
+    for m in tooth_ms.values():
+        design_m |= m
     region = cv2.dilate(design_m | old, np.ones((2 * dilate + 1,) * 2, np.uint8))
     # incisal line per column: nothing below max(design edge, old edge) + 3 px  (keeps the lower teeth)
     cut = np.full(w, -1, np.int32)
@@ -275,11 +293,13 @@ def prepare_inputs(crop, design, cur_masks, mouth_poly, shade='B1', dilate=5):
     gum_line = np.full(w, np.inf)
     for t, b in design.items():
         xa, xb = int(max(0, b['x0'] - 4)), int(min(w, b['x1'] + 4))
-        gum_line[xa:xb] = np.minimum(gum_line[xa:xb], b['y0'] + 0.22 * (b['y1'] - b['y0']))
+        gum_line[xa:xb] = np.minimum(gum_line[xa:xb], b['y0'] + (0.5 if bank_set is not None else 0.22) * (b['y1'] - b['y0']))
     dark = (hole == 1) & (yy > gum_line[None, :])
     pre[dark] = (45, 28, 28)
     detail = crop.astype(np.float32) - cv2.GaussianBlur(crop, (0, 0), 3).astype(np.float32)
-    for t, m in tooth_ms.items():
+    if bank_set is not None:
+        TB.paint_teeth(pre, design, bank_set, target_lab)
+    for t, m in ({} if bank_set is not None else tooth_ms).items():
         b = design[t]
         ys, xs = np.nonzero(m & mask)
         if not len(xs):
@@ -294,7 +314,11 @@ def prepare_inputs(crop, design, cur_masks, mouth_poly, shade='B1', dilate=5):
         pre[ys, xs] = col + 0.6 * on_old * detail[ys, xs]
     edges = np.zeros((h, w), np.uint8)
     for t, b in design.items():
-        cv2.polylines(edges, [np.round(tooth_polygon(t, b)).astype(np.int32)], True, 255, 2)
+        if bank_set is not None and t in tooth_ms:
+            cs, _ = cv2.findContours(tooth_ms[t], cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+            cv2.drawContours(edges, cs, -1, 255, 2)
+        else:
+            cv2.polylines(edges, [np.round(tooth_polygon(t, b)).astype(np.int32)], True, 255, 2)
     edges &= (mouth * 255).astype(np.uint8)
     # thin dark contact lines only BETWEEN neighbouring teeth (no dark rim at the gum line or the lips)
     k3 = np.ones((5, 5), np.uint8)
@@ -302,8 +326,11 @@ def prepare_inputs(crop, design, cur_masks, mouth_poly, shade='B1', dilate=5):
     contact = np.zeros((h, w), bool)
     for a, b in zip(order, order[1:]):
         contact |= (cv2.dilate(tooth_ms[a], k3) > 0) & (cv2.dilate(tooth_ms[b], k3) > 0)
-    pre[contact & (mask == 1)] *= 0.62
-    return dict(prepaint=np.clip(pre, 0, 255).astype(np.uint8), mask=mask, edges=edges,
+    if bank_set is None:
+        pre[contact & (mask == 1)] *= 0.62
+    else:                                                   # real teeth bring their own contacts; just a soft shadow
+        pre[contact & (mask == 1) & (design_m == 0)] *= 0.55
+    return dict(prepaint=np.clip(pre, 0, 255).astype(np.uint8), mask=mask, edges=edges, target_lab=target_lab, ref_mask=ref_mask,
                 design_mask=design_m & mouth, tooth_masks={t: m & mouth for t, m in tooth_ms.items()})
 
 
@@ -342,12 +369,50 @@ def check_generated(seg, before, after, inputs, mouth_poly):
              iou_min=float(min(ious.values())) if ious else 0.0,
              iou_union=union_iou, teeth_found=len(got), outside_change=drift, extra_tooth_px=extra,
              iou=ious)
-    r['pass'] = bool(r['iou_union'] >= 0.80 and r['outside_change'] < 1.0 and extra < 0.01 * dm_all.sum() + 50)
+    r['pass_geometry'] = bool(r['iou_union'] >= 0.80 and r['outside_change'] < 1.0 and extra < 0.01 * dm_all.sum() + 50)
+    r.update(realism(before, after, inputs))
+    r['pass'] = bool(r['pass_geometry'] and r['pass_realism'])
     return r
 
 
+def _lab_cie(lab):
+    return np.array([lab[0] * 100 / 255, lab[1] - 128, lab[2] - 128], np.float32)
+
+
+def realism(before, after, inputs):
+    """v1 passed the geometry check by copying flat blocks. These measure what it missed:
+    texture  - fine detail inside the new teeth vs the patient's real teeth (Laplacian spread); flat = low
+    colour   - CIE dE of the new teeth from the planned shade (patient's own, moderately whitened)
+    seam     - edge strength on the border of the edited area vs the same border before; a halo or rim = high"""
+    k = np.ones((5, 5), np.uint8)
+    new = cv2.erode(inputs['design_mask'], k)
+    ref = cv2.erode(inputs.get('ref_mask', np.zeros_like(new)), np.ones((3, 3), np.uint8))
+    ga, gb = cv2.cvtColor(after, cv2.COLOR_RGB2GRAY).astype(np.float32), cv2.cvtColor(before, cv2.COLOR_RGB2GRAY).astype(np.float32)
+    la, lb = cv2.Laplacian(ga, cv2.CV_32F, ksize=3), cv2.Laplacian(gb, cv2.CV_32F, ksize=3)
+    out = {}
+    if new.sum() > 100:
+        tex_new = float(la[new > 0].std())
+        tex_ref = float(lb[ref > 0].std()) if ref.sum() > 100 else 12.0
+        out['texture_ratio'] = tex_new / max(tex_ref, 1e-3)
+        lab = cv2.cvtColor(after, cv2.COLOR_RGB2LAB).astype(np.float32)[new > 0].mean(0)
+        tgt = inputs.get('target_lab')
+        if tgt is None:
+            tgt = cv2.cvtColor(after, cv2.COLOR_RGB2LAB).astype(np.float32)[ref > 0].mean(0) if ref.sum() > 100 else lab
+        out['color_dE'] = float(np.linalg.norm(_lab_cie(lab) - _lab_cie(tgt)))
+        out['L_star'] = float(lab[0] * 100 / 255)
+    else:
+        out.update(texture_ratio=0.0, color_dE=99.0, L_star=0.0)
+    m = inputs['mask']
+    ring = (cv2.dilate(m, np.ones((3, 3), np.uint8)) - cv2.erode(m, np.ones((3, 3), np.uint8))) > 0
+    gxa, gya = cv2.Sobel(ga, cv2.CV_32F, 1, 0), cv2.Sobel(ga, cv2.CV_32F, 0, 1)
+    gxb, gyb = cv2.Sobel(gb, cv2.CV_32F, 1, 0), cv2.Sobel(gb, cv2.CV_32F, 0, 1)
+    out['seam_ratio'] = float(np.hypot(gxa, gya)[ring].mean() / max(np.hypot(gxb, gyb)[ring].mean(), 1e-3)) if ring.any() else 1.0
+    out['pass_realism'] = bool(0.45 <= out['texture_ratio'] <= 2.2 and out['color_dE'] <= 10 and out['seam_ratio'] <= 1.8)
+    return out
+
+
 # ---------------------------------------------------------------- one photo, up to the generator
-def analyse(rgb, face, seg, shape='square', proportion='red70', shade='B1', out_w=768):
+def analyse(rgb, face, seg, shape='square', proportion='red70', shade='B1', out_w=768, bank=None):
     P = face(rgb)
     if P is None:
         return dict(ok=False, reason='no face found')
@@ -363,9 +428,13 @@ def analyse(rgb, face, seg, shape='square', proportion='red70', shade='B1', out_
     cur_boxes = {t: box(m) for t, m in cur.items()}
     design = propose_design(cur_boxes, mouth_poly, mid_x, shape=shape, proportion=proportion)
     ok, problems = validate_design(design, mouth_poly, *size)
-    inputs = prepare_inputs(crop, design, cur, mouth_poly, shade=shade)
+    bank_set = None
+    if bank:
+        import tooth_bank as TB
+        bank_set = TB.pick_set(bank, design)
+    inputs = prepare_inputs(crop, design, cur, mouth_poly, shade=shade, bank_set=bank_set)
     return dict(ok=ok, problems=problems, P=P, M=M, crop=crop, mouth_poly=mouth_poly, midline_x=mid_x,
-                current=cur_boxes, design=design, inputs=inputs)
+                current=cur_boxes, design=design, inputs=inputs, bank_id=bank_set['id'] if bank_set else None)
 
 
 def overlay(crop, design, current=None, mouth_poly=None):
